@@ -47,7 +47,7 @@ pub trait Decode {
     }
 }
 
-/// The ActualSize trait is used to get the actual size of the data structure.
+/// The `ActualSize` trait is used to get the actual size of the data structure.
 pub trait ActualSize {
     /// Get the actual size of the data structure
     fn actual_size(&self) -> u64;

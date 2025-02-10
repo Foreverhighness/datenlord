@@ -29,7 +29,7 @@ use tracing::{debug, warn};
 
 /// The huge body length for the response,
 /// when the response is too large, we need to consider to take user buffer.
-const HUGE_BODY_LEN: u64 = 1 * 1024 * 1024;
+const HUGE_BODY_LEN: u64 = 1024 * 1024;
 
 /// Define trait for implementing the RPC server connection handler.
 #[async_trait]
@@ -271,46 +271,44 @@ where
                 } else {
                     warn!("Failed to send keepalive response");
                 }
+            } else if body_len <= HUGE_BODY_LEN {
+                debug!("Request body length is less than 1MB, try to read the request body");
+                // Try to read the request body
+                match self.inner.recv_len(body_len).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        warn!("Failed to receive request body: {:?}", err);
+                        return;
+                    }
+                };
+                debug!(
+                    "Dispatched handler for the connection, seq: {:?}",
+                    req_header.seq
+                );
+                let req_buffer: &mut BytesMut = unsafe { &mut *self.inner.req_buf.get() };
+                self.inner
+                    .dispatch_handler
+                    .dispatch(req_header, req_buffer.clone(), done_tx)
+                    .await;
             } else {
-                if body_len <= HUGE_BODY_LEN {
-                    debug!("Request body length is less than 1MB, try to read the request body");
-                    // Try to read the request body
-                    match self.inner.recv_len(body_len).await {
-                        Ok(()) => {}
-                        Err(err) => {
-                            warn!("Failed to receive request body: {:?}", err);
-                            return;
-                        }
-                    };
-                    debug!(
-                        "Dispatched handler for the connection, seq: {:?}",
-                        req_header.seq
-                    );
-                    let req_buffer: &mut BytesMut = unsafe { &mut *self.inner.req_buf.get() };
-                    self.inner
-                        .dispatch_handler
-                        .dispatch(req_header, req_buffer.clone(), done_tx)
-                        .await;
-                } else {
-                    debug!("Request body length is huge, try to read the request body");
-                    // Huge body length, need to consider to take user buffer
-                    let mut req_buffer = BytesMut::with_capacity(u64_to_usize(body_len));
-                    match self.inner.recv_huge_len(body_len, &mut req_buffer).await {
-                        Ok(()) => {}
-                        Err(err) => {
-                            warn!("Failed to receive huge request body: {:?}", err);
-                            return;
-                        }
-                    };
-                    debug!(
-                        "Dispatched handler for the connection, seq: {:?}",
-                        req_header.seq
-                    );
-                    self.inner
-                        .dispatch_handler
-                        .dispatch(req_header, req_buffer, done_tx)
-                        .await;
-                }
+                debug!("Request body length is huge, try to read the request body");
+                // Huge body length, need to consider to take user buffer
+                let mut req_buffer = BytesMut::with_capacity(u64_to_usize(body_len));
+                match self.inner.recv_huge_len(body_len, &mut req_buffer).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        warn!("Failed to receive huge request body: {:?}", err);
+                        return;
+                    }
+                };
+                debug!(
+                    "Dispatched handler for the connection, seq: {:?}",
+                    req_header.seq
+                );
+                self.inner
+                    .dispatch_handler
+                    .dispatch(req_header, req_buffer, done_tx)
+                    .await;
             }
         } else {
             debug!("Inner request type is not matched: {:?}", req_header.op);
@@ -336,9 +334,9 @@ where
                     // Send response to the stream
                     // if let Ok(res) = inner_conn.send_response(&resp_buffer).await {
 
-                    for buf in resp_buffer.iter() {
+                    for buf in &resp_buffer {
                         // Send vectored data to the stream
-                        if let Ok(res) = inner_conn.send_response(&buf).await {
+                        if let Ok(res) = inner_conn.send_response(buf).await {
                             debug!("Sent file block response successfully: {:?}", res);
                         } else {
                             warn!("Failed to send file block response");

@@ -36,9 +36,9 @@ const RPC_CLIENT_CACHE_CHECK_DURATION: u64 = 60;
 /// Unused kv block id
 const UNUSED_KV_BLOCK_ID: u64 = 0;
 
-/// KVBlock instance
+/// `KVBlock` instance
 ///
-/// |--------KVBlock-----| => single kv block data
+/// |--------`KVBlock`-----| => single kv block data
 /// |cache1|cache2|cache3| => contains kv cache data = cache1, cache2, cache3
 /// |0-----|1-----|2-----| => prefix = 0, 1, 2
 ///
@@ -53,7 +53,7 @@ pub struct KVBlock {
     pub data: Vec<u8>,
 }
 
-/// KVCache instance metadata
+/// `KVCache` instance metadata
 ///
 /// Set current kv cache metadata info to single kv block
 #[derive(Debug, Clone)]
@@ -168,7 +168,7 @@ where
         match self.block_metas_tree.get_ancestor_key(&prefix) {
             Some(ancestor_key) => {
                 let kv_cache_meta = self.block_metas_tree.get_ancestor_value(ancestor_key)?;
-                return Some(kv_cache_meta.clone());
+                Some(kv_cache_meta.clone())
             }
             None => None,
         }
@@ -189,7 +189,7 @@ where
         let mut data = Vec::new();
         data.extend_from_slice(&self.block_cache.data[offset..offset + size]);
 
-        return Some(data);
+        Some(data)
     }
 
     /// Clear the local block cache with new block id
@@ -202,7 +202,7 @@ where
         self.block_metas_tree = Trie::new();
     }
 
-    /// Get KVBlock
+    /// Get `KVBlock`
     pub fn get_kv_block(&self) -> KVBlock {
         let mut current_block = self.block_cache.clone();
         // Return a copy of the block data
@@ -213,7 +213,7 @@ where
         current_block
     }
 
-    /// Get KVCacheMeta
+    /// Get `KVCacheMeta`
     pub fn get_kv_cache_metas(&self) -> Vec<KVCacheMeta<K>> {
         self.block_metas.clone()
     }
@@ -237,6 +237,7 @@ where
     Vec<K>: radix_trie::TrieKey + Clone,
 {
     /// Create a new distribute cache client
+    #[must_use]
     pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
         let inner = DistributeKVCacheClientInner::new(cluster_manager, block_size);
         Self {
@@ -403,7 +404,7 @@ where
         }
 
         // Empty address from the distribute cache
-        if node_address.len() == 0 {
+        if node_address.is_empty() {
             error!("Failed to get block, node address is empty");
             return Ok((Vec::new(), bytes::Bytes::new()));
         }
@@ -613,6 +614,7 @@ where
     K: num::Num + Eq + Send + Sync + Clone + fmt::Debug + 'static,
 {
     /// Create a new distribute cache client
+    #[must_use]
     pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
         let rpc_client_cache = Arc::new(Mutex::new(HashMap::new()));
         Self {
@@ -629,7 +631,7 @@ where
         TASK_MANAGER
             .spawn(TaskName::AsyncFuse, |token| async move {
                 match cluster_manager.watch_ring(token).await {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(err) => {
                         error!("Failed to watch ring: {:?}", err);
                     }
@@ -663,13 +665,13 @@ where
                 let duration = Duration::from_secs(RPC_CLIENT_CACHE_CHECK_DURATION);
                 loop {
                     tokio::select! {
-                        _ = tokio::time::sleep(duration) => {
+                        () = tokio::time::sleep(duration) => {
                             // If current rpc request is valid, we will hold this request and continue to use it,
                             // in this period, we just delete all the rpc client in the cache
                             rpc_client_cache.lock().await.clear();
                             debug!("Batch validate rpc client cache task is finished");
                         }
-                        _ = token.cancelled() => {
+                        () = token.cancelled() => {
                             warn!("Batch validate rpc client cache task is cancelled");
                             return;
                         }
@@ -710,25 +712,17 @@ where
 
         match rx.recv_async().await {
             Ok(Ok(response)) => match response {
-                KVCacheResponse::KVCacheIdAllocateResponse(response) => {
-                    return Ok(response.kv_cache_id);
-                }
-                _ => {
-                    return Err(DatenLordError::DistributeCacheManagerErr {
-                        context: vec![format!("Failed to read block: {:?}", response)],
-                    });
-                }
+                KVCacheResponse::KVCacheIdAllocateResponse(response) => Ok(response.kv_cache_id),
+                _ => Err(DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to read block: {:?}", response)],
+                }),
             },
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -780,7 +774,7 @@ where
                     })?;
                     info!("Matched kv cache meta address: {:?}", node_address);
                     raw_prefix.truncate(u64_to_usize(response.kv_cache_key_len));
-                    return Ok((
+                    Ok((
                         KVCacheMeta {
                             block_id: response.kv_cache_id,
                             offset: response.offset,
@@ -789,24 +783,18 @@ where
                             prefix: raw_prefix,
                         },
                         node_address,
-                    ));
+                    ))
                 }
-                _ => {
-                    return Err(DatenLordError::DistributeCacheManagerErr {
-                        context: vec![format!("Failed to read block: {:?}", response)],
-                    });
-                }
+                _ => Err(DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to read block: {:?}", response)],
+                }),
             },
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -822,7 +810,7 @@ where
 
         // Generate Vec<KVCacheIndexInsertRequest>
         let mut kv_cache_index_insert_requests = Vec::new();
-        for item in kv_cache_meta_list.into_iter() {
+        for item in kv_cache_meta_list {
             let kv_cache_key = item.prefix;
             kv_cache_index_insert_requests.push(KVCacheIndexInsertRequest {
                 block_size: self.block_size,
@@ -859,25 +847,17 @@ where
 
         match rx.recv_async().await {
             Ok(Ok(response)) => match response {
-                KVCacheResponse::KVCacheIndexInsertResponse(_) => {
-                    return Ok(());
-                }
-                _ => {
-                    return Err(DatenLordError::DistributeCacheManagerErr {
-                        context: vec![format!("Failed to read block: {:?}", response)],
-                    });
-                }
+                KVCacheResponse::KVCacheIndexInsertResponse(_) => Ok(()),
+                _ => Err(DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to read block: {:?}", response)],
+                }),
             },
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -907,25 +887,17 @@ where
 
         match rx.recv_async().await {
             Ok(Ok(response)) => match response {
-                KVCacheResponse::KVCacheIndexRemoveResponse(_) => {
-                    return Ok(());
-                }
-                _ => {
-                    return Err(DatenLordError::DistributeCacheManagerErr {
-                        context: vec![format!("Failed to read block: {:?}", response)],
-                    });
-                }
+                KVCacheResponse::KVCacheIndexRemoveResponse(_) => Ok(()),
+                _ => Err(DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to read block: {:?}", response)],
+                }),
             },
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -954,25 +926,19 @@ where
                 KVCacheResponse::KVBlockGetResponse(response) => {
                     debug!("Get block from remote cache");
                     // Return bytes here.
-                    return Ok(response.data);
+                    Ok(response.data)
                     // return Ok(vec![]);
                 }
-                _ => {
-                    return Err(DatenLordError::DistributeCacheManagerErr {
-                        context: vec![format!("Failed to read block: {:?}", response)],
-                    });
-                }
+                _ => Err(DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to read block: {:?}", response)],
+                }),
             },
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -981,7 +947,7 @@ where
         let start = tokio::time::Instant::now();
         // Create a Vec<KVBlockPutRequest> for batch put
         let mut kv_block_put_requests = Vec::new();
-        for item in kv_blocks.into_iter() {
+        for item in kv_blocks {
             kv_block_put_requests.push(KVBlockPutRequest {
                 block_size: self.block_size,
                 kv_cache_id: item.block_id,
@@ -1029,25 +995,19 @@ where
                         debug!("KVCacheResponse::KVBlockBatchPutResponse(response) check Time cost: {:?}", start_4 - start_3);
                         // TODO: show block result here.
                         debug!("Batch put blocks: {:?}", response);
-                        return Ok(());
+                        Ok(())
                     }
-                    _ => {
-                        return Err(DatenLordError::DistributeCacheManagerErr {
-                            context: vec![format!("Failed to read block: {:?}", response)],
-                        });
-                    }
+                    _ => Err(DatenLordError::DistributeCacheManagerErr {
+                        context: vec![format!("Failed to read block: {:?}", response)],
+                    }),
                 }
             }
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 
@@ -1124,24 +1084,24 @@ mod tests {
         let fetched_block_id = 1;
         local_block_cache.clear(fetched_block_id);
 
-        let data = vec![1u8; 10];
+        let data = vec![1_u8; 10];
         let prefix1 = vec![1_u32, 2_u32, 3_u32];
         let offset = local_block_cache.get_next_offset();
         let kv_cache_meta = KVCacheMeta {
             block_id: fetched_block_id,
-            offset: offset,
+            offset,
             size: data.len() as u64,
             prefix: prefix1.clone(),
         };
         let insert_result = local_block_cache.insert(kv_cache_meta, &data).is_ok();
         assert!(insert_result);
 
-        let data = vec![2u8; 30];
+        let data = vec![2_u8; 30];
         let prefix2 = vec![1_u32, 2_u32, 4_u32];
         let offset = local_block_cache.get_next_offset();
         let kv_cache_meta = KVCacheMeta {
             block_id: fetched_block_id,
-            offset: offset,
+            offset,
             size: data.len() as u64,
             prefix: prefix2.clone(),
         };
@@ -1149,12 +1109,12 @@ mod tests {
         assert!(insert_result);
 
         // Current local block cache is full
-        let data = vec![3u8; 30];
+        let data = vec![3_u8; 30];
         let prefix3 = vec![1_u32, 2_u32, 5_u32];
         let offset = local_block_cache.get_next_offset();
         let kv_cache_meta = KVCacheMeta {
             block_id: fetched_block_id,
-            offset: offset,
+            offset,
             size: data.len() as u64,
             prefix: prefix3,
         };
@@ -1164,8 +1124,8 @@ mod tests {
         let current_kv_block = local_block_cache.get_kv_block();
         assert_eq!(current_kv_block.block_id, fetched_block_id);
         assert_eq!(current_kv_block.data.len(), 40);
-        assert_eq!(current_kv_block.data[0], 1u8);
-        assert_eq!(current_kv_block.data[10], 2u8);
+        assert_eq!(current_kv_block.data[0], 1_u8);
+        assert_eq!(current_kv_block.data[10], 2_u8);
 
         let current_kv_cache_metas = local_block_cache.get_kv_cache_metas();
         assert_eq!(current_kv_cache_metas.len(), 2);
@@ -1193,7 +1153,7 @@ mod tests {
         // Start a mocked rpc server
         let ip = "127.0.0.1";
         let port = 2889;
-        let addr = format!("{}:{}", ip, port);
+        let addr = format!("{ip}:{port}");
         let cache_manager = Arc::new(KVBlockManager::default());
         let index_manager = Arc::new(IndexManager::<u32>::new());
         let pool = Arc::new(WorkerPool::new(5, 5));
@@ -1213,6 +1173,6 @@ mod tests {
         );
 
         let res = distribute_kvcache_client_inner.get_client(addr).await;
-        assert!(res.is_ok());
+        res.unwrap();
     }
 }

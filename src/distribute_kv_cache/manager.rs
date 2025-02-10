@@ -63,7 +63,7 @@ const DEFAULT_INDEX_KEY: &str = "kvcacheindex";
 /// Helper function to generate kv cache index value
 #[allow(dead_code)]
 fn generate_kv_cache_index_value(block_id: u64, offset: u64, size: u64, addr: &str) -> String {
-    format!("{}_{}_{}_{}", block_id, offset, size, addr)
+    format!("{block_id}_{offset}_{size}_{addr}")
 }
 
 /// Helper function to parse kv cache index value
@@ -390,7 +390,7 @@ impl Job for KVBlockHandler {
                                     kv_cache_id: req_body.kv_cache_id,
                                     block_size: req_body.block_size,
                                     status: StatusCode::InternalError,
-                                    data: data,
+                                    data,
                                 };
                             } else {
                                 kv_block_get_resp = KVBlockGetResponse {
@@ -473,7 +473,7 @@ impl Job for KVBlockHandler {
                     // debug!("KVBlockBatchPutRequest: Received request: {:?}", req_body);
                     let mut success_ids = vec![];
                     let mut failed_ids = vec![];
-                    for block in req_body.blocks.into_iter() {
+                    for block in req_body.blocks {
                         let block_start = tokio::time::Instant::now();
                         let meta_data = MetaData::new(block.kv_cache_id, 0, 0, 0);
                         let kv_block = Block::new(meta_data, block.data);
@@ -483,7 +483,7 @@ impl Job for KVBlockHandler {
                             block_start_0
                         );
                         match self.cache_manager.write(kv_block).await {
-                            Ok(_) => {
+                            Ok(()) => {
                                 success_ids.push(block.kv_cache_id);
                                 let block_start_1 = block_start.elapsed();
                                 debug!(
@@ -1004,7 +1004,7 @@ where
             .bucket(&backend_config.bucket_name);
 
         // Init region
-        if let Some(region) = backend_config.region.to_owned() {
+        if let Some(region) = backend_config.region.clone() {
             builder.region(region.as_str());
         } else {
             // Auto detect region
@@ -1230,7 +1230,7 @@ mod tests {
                 .unwrap();
         assert_eq!(resp_body.kv_cache_id, 1);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
     }
 
     /// Try to test current kv cache index data
@@ -1282,7 +1282,7 @@ mod tests {
                 .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::Success);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
 
         // Test match index request success
         let (done_tx, mut done_rx) = tokio::sync::mpsc::channel(1);
@@ -1316,7 +1316,7 @@ mod tests {
         assert_eq!(resp_body.status, message::StatusCode::Success);
         assert_eq!(resp_body.kv_cache_id, 0);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
 
         // Test partial match index request success, original key is "test_key111",
         // and we will return the longest key match with "test_key".
@@ -1351,7 +1351,7 @@ mod tests {
         assert_eq!(resp_body.status, message::StatusCode::Success);
         assert_eq!(resp_body.kv_cache_id, 0);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
 
         // Test match index request failed, the key is not exist
         let (done_tx, mut done_rx) = tokio::sync::mpsc::channel(1);
@@ -1382,7 +1382,7 @@ mod tests {
         let resp_body =
             message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
                 .unwrap();
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
 
@@ -1449,7 +1449,7 @@ mod tests {
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
 
         // Test partial match index request failed, because original key "test_key" is removed
         let (done_tx, mut done_rx) = tokio::sync::mpsc::channel(1);
@@ -1483,7 +1483,7 @@ mod tests {
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
     }
 
     /// Try to put and get block data
@@ -1506,7 +1506,7 @@ mod tests {
             blocks: vec![message::KVBlockPutRequest {
                 block_size: BLOCK_SIZE as u64,
                 kv_cache_id: 0,
-                data: bytes::Bytes::from(vec![0u8; BLOCK_SIZE]),
+                data: bytes::Bytes::from(vec![0_u8; BLOCK_SIZE]),
             }],
         };
         request.encode(&mut req_buffer);
@@ -1530,7 +1530,7 @@ mod tests {
         assert_eq!(resp_body.success_batch_size, 1);
         assert_eq!(resp_body.failed_batch_size, 0);
 
-        println!("resp_body: {:?}", resp_body);
+        println!("resp_body: {resp_body:?}");
 
         // Test get block request
         let (done_tx, mut done_rx) = tokio::sync::mpsc::channel(1);

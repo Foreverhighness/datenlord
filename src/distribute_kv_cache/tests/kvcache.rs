@@ -87,7 +87,7 @@ mod tests {
         // Setup the kv cache server
         let ip = "127.0.0.1";
         let port = 2789;
-        let _addr = format!("{}:{}", ip, port);
+        let _addr = format!("{ip}:{port}");
         let etcd_endpoint = "localhost:2379";
         let client = EtcdKVEngine::new(vec![etcd_endpoint.to_owned()])
             .await
@@ -117,7 +117,7 @@ mod tests {
         // tokio::time::sleep(tokio::time::Duration::from_secs(1000)).await;
 
         // Setup the kv cache client
-        let block_size = 16777216;
+        let block_size = 0x0100_0000;
         let kvcacheclient = DistributeKVCacheClient::new(cluster_manager, block_size);
         kvcacheclient.start_watch().await.unwrap();
 
@@ -147,18 +147,18 @@ mod tests {
         for i in 4_u32..=10 {
             // Test get 2 from the kv cache client
             let prefix = vec![0_u32, i];
-            let data = vec![1u8; 16777216];
+            let data = vec![1_u8; 0x0100_0000];
             // let (matched_prefix, buf) = kvcacheclient.try_load(prefix.to_owned()).await.unwrap();
-            kvcacheclient.insert(prefix.to_owned(), data).await.unwrap();
+            kvcacheclient.insert(prefix.clone(), data).await.unwrap();
             // assert_eq!(matched_prefix, "test2");
             // assert_eq!(buf.len(), 16777216);
             // assert!(buf.iter().all(|&x| x == 2));
         }
         let elapsed = start.elapsed();
-        println!("Elapsed: {:?}", elapsed);
+        println!("Elapsed: {elapsed:?}");
         println!(
             "Speed: {:?}",
-            16777216.0 / 1024.0 / 1024.0 / elapsed.as_secs_f64()
+            16_777_216.0 / 1024.0 / 1024.0 / elapsed.as_secs_f64()
         );
 
         // // Test get 4 from the kv cache client, should return error

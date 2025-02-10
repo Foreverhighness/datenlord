@@ -236,7 +236,7 @@ mod tests {
             // Send file block request
             let block_request = FileBlockRequest {
                 block_id: i,
-                block_size: block_size,
+                block_size,
                 file_id: 0,
                 block_version: 0,
                 hash_ring_version: 1,
@@ -266,7 +266,7 @@ mod tests {
             }
         }
         let elapsed = start.elapsed();
-        println!("Elapsed time: {:?}", elapsed);
+        println!("Elapsed time: {elapsed:?}");
 
         // let (tx, rx) = flume::unbounded::<Result<FileBlockResponse, FileBlockRequest>>();
         // // Send file block request

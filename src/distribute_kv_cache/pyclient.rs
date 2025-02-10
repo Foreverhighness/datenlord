@@ -14,7 +14,7 @@ use datenlord::{
     fs::kv_engine::{etcd_impl::EtcdKVEngine, KVEngine, KVEngineType},
     // metrics,
 };
-use tracing::{debug, error, info, level_filters::LevelFilter};
+use tracing::{debug, info, level_filters::LevelFilter};
 
 #[derive(Debug, Parser)]
 #[clap(author,version,about,long_about=None)]

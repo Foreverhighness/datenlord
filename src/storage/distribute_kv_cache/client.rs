@@ -27,7 +27,7 @@ const RPC_CLIENT_CACHE_CHECK_DURATION: u64 = 60;
 
 /// Get block path by `ino`, `mtime`, `block_id` and `block_size`
 fn get_block_path_id(ino: u64, mtime: u64, block_id: u64, block_size: u64) -> String {
-    format!("{}_{}_{}_{}", ino, mtime, block_id, block_size)
+    format!("{ino}_{mtime}_{block_id}_{block_size}")
 }
 
 /// The distribute cache client
@@ -56,7 +56,7 @@ impl DistributeCacheClient {
         TASK_MANAGER
             .spawn(TaskName::AsyncFuse, |token| async move {
                 match cluster_manager.watch_ring(token).await {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(err) => {
                         error!("Failed to watch ring: {:?}", err);
                     }
@@ -74,13 +74,13 @@ impl DistributeCacheClient {
                 let duration = Duration::from_secs(RPC_CLIENT_CACHE_CHECK_DURATION);
                 loop {
                     tokio::select! {
-                        _ = tokio::time::sleep(duration) => {
+                        () = tokio::time::sleep(duration) => {
                             // If current rpc request is valid, we will hold this request and continue to use it,
                             // in this period, we just delete all the rpc client in the cache
                             rpc_client_cache.lock().await.clear();
                             debug!("Batch validate rpc client cache task is finished");
                         }
-                        _ = token.cancelled() => {
+                        () = token.cancelled() => {
                             warn!("Batch validate rpc client cache task is cancelled");
                             return;
                         }
@@ -125,8 +125,8 @@ impl DistributeCacheClient {
             }
         })?;
         let block_request = FileBlockRequest {
-            block_id: block_id,
-            block_size: block_size,
+            block_id,
+            block_size,
             file_id: ino,
             block_version: mtime,
             hash_ring_version: current_ring.version(),
@@ -208,21 +208,17 @@ impl DistributeCacheClient {
                 // will be processed in the future.
 
                 // TODO: Update to new storage block
-                return Ok(Block::from_slice(
+                Ok(Block::from_slice(
                     u64_to_usize(response.block_size),
                     &response.data,
-                ));
+                ))
             }
-            Ok(Err(err)) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block: {:?}", err)],
-                });
-            }
-            Err(_) => {
-                return Err(DatenLordError::DistributeCacheManagerErr {
-                    context: vec![format!("Failed to read block")],
-                });
-            }
+            Ok(Err(err)) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block: {:?}", err)],
+            }),
+            Err(_) => Err(DatenLordError::DistributeCacheManagerErr {
+                context: vec![format!("Failed to read block")],
+            }),
         }
     }
 }

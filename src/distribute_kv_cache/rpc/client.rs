@@ -27,7 +27,7 @@ use super::{
 
 /// The huge body length for the response,
 /// when the response is too large, we need to consider to take user buffer.
-const HUGE_BODY_LEN: u64 = 1 * 1024 * 1024;
+const HUGE_BODY_LEN: u64 = 1024 * 1024;
 
 /// TODO: combine `RpcClientConnectionInner` and `RpcClientConnection`
 struct RpcClientConnectionInner<P>

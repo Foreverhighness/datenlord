@@ -28,11 +28,13 @@ pub struct FSBackend {
 
 impl FSBackend {
     /// Creates a new `FSBackend` instance with the given `Operator`.
+    #[must_use]
     pub fn new(operator: Operator) -> Self {
         Self { operator }
     }
 
     /// Create a tmp backend
+    #[must_use]
     pub fn default() -> Self {
         let mut builder = Fs::default();
         builder.root("/tmp/backend/");
@@ -97,6 +99,7 @@ pub struct S3Backend {
 impl S3Backend {
     /// Creates a new `S3Backend` instance with the given `Operator`.
     /// You need to create a s3 operator and pass it to this function.
+    #[must_use]
     pub fn new(operator: Operator) -> Self {
         Self { operator }
     }

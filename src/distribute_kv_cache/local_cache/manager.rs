@@ -14,7 +14,7 @@ use super::{
     StorageResult,
 };
 
-/// CacheManager struct to manage cache
+/// `CacheManager` struct to manage cache
 #[derive(Debug)]
 pub struct CacheManager<K, P>
 where
@@ -30,7 +30,7 @@ where
     K: Eq + std::hash::Hash + Clone + Debug,
     P: EvictPolicy<K>,
 {
-    /// Create a new CacheManager
+    /// Create a new `CacheManager`
     pub fn new(policy: P) -> Self {
         CacheManager {
             policy,
@@ -48,14 +48,14 @@ where
                 self.policy.size()
             );
             if let Some(evicted_block) = self.policy.evict() {
-                println!("Evict block: {:?}", evicted_block);
+                println!("Evict block: {evicted_block:?}");
                 // self.cache.remove(&evicted_block.clone());
                 // Safe drop
                 if self.cache.contains_key(&evicted_block) {
-                    println!("Evict block: {:?}", evicted_block);
+                    println!("Evict block: {evicted_block:?}");
                     self.cache.remove(&evicted_block);
                 } else {
-                    println!("Evicted block {:?} not found in cache!", evicted_block);
+                    println!("Evicted block {evicted_block:?} not found in cache!");
                 }
             }
         }
@@ -89,7 +89,7 @@ where
     }
 }
 
-/// BlockManager struct to manage blocks
+/// `BlockManager` struct to manage blocks
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct BlockManager {
@@ -100,7 +100,7 @@ pub struct BlockManager {
 }
 
 impl BlockManager {
-    /// Create a new BlockManager
+    /// Create a new `BlockManager`
     pub fn new(backend: Arc<dyn Backend>) -> Self {
         // Create a new LRUPolicy with a capacity of 2000
         // It will evict the least recently used block when the cache is full
@@ -110,7 +110,8 @@ impl BlockManager {
         BlockManager { cache, backend }
     }
 
-    /// Create a new KVBlockManager with default FSBackend
+    /// Create a new `KVBlockManager` with default `FSBackend`
+    #[must_use]
     pub fn default() -> Self {
         let backend = Arc::new(FSBackend::default());
         Self::new(backend)
@@ -171,7 +172,7 @@ impl BlockManager {
 
             // error!("Read block: {:?}", block);
 
-            return Ok(Some(block));
+            Ok(Some(block))
         }
     }
 
@@ -209,13 +210,13 @@ impl BlockManager {
             .backend
             .remove(&relative_path)
             .await
-            .map_err(|e| format!("Failed to remove block: {}", e));
+            .map_err(|e| format!("Failed to remove block: {e}"));
 
         Ok(())
     }
 }
 
-/// KVBlockManager struct to manage blocks
+/// `KVBlockManager` struct to manage blocks
 /// TODO: remove disk backend cache.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -227,7 +228,7 @@ pub struct KVBlockManager {
 }
 
 impl KVBlockManager {
-    /// Create a new KVBlockManager
+    /// Create a new `KVBlockManager`
     pub fn new(backend: Arc<dyn Backend>) -> Self {
         // Create a new LRUPolicy with a capacity of 2000
         // It will evict the least recently used block when the cache is full
@@ -237,7 +238,8 @@ impl KVBlockManager {
         KVBlockManager { cache, backend }
     }
 
-    /// Create a new KVBlockManager with default FSBackend
+    /// Create a new `KVBlockManager` with default `FSBackend`
+    #[must_use]
     pub fn default() -> Self {
         let backend = Arc::new(FSBackend::default());
         Self::new(backend)
@@ -257,7 +259,7 @@ impl KVBlockManager {
             }
         }
 
-        return Ok(None);
+        Ok(None)
 
         // Try to fetch data and update local cache
         // {
@@ -335,7 +337,7 @@ impl KVBlockManager {
     }
 }
 
-/// IndexManager struct to manage kv cache index.
+/// `IndexManager` struct to manage kv cache index.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct IndexManager<K> {
@@ -345,12 +347,23 @@ pub struct IndexManager<K> {
     id_allocator: AtomicU64,
 }
 
+impl<K> Default for IndexManager<K>
+where
+    K: num::Num + Eq,
+    Vec<K>: radix_trie::TrieKey + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K> IndexManager<K>
 where
     K: num::Num + Eq,
     Vec<K>: radix_trie::TrieKey + Clone,
 {
-    /// Create a new IndexManager
+    /// Create a new `IndexManager`
+    #[must_use]
     pub fn new() -> Self {
         IndexManager {
             index: Arc::new(RwLock::new(Trie::<Vec<K>, String>::new())),
@@ -403,10 +416,9 @@ where
     pub fn get_longest_kv(&self, key: &Vec<K>) -> Option<(Vec<K>, String)> {
         match self.index.read() {
             Ok(read_lock) => match read_lock.get_ancestor_key(key) {
-                Some(ancestor_key) => match read_lock.get_ancestor_value(key) {
-                    Some(value) => Some((ancestor_key.clone(), value.clone())),
-                    None => None,
-                },
+                Some(ancestor_key) => read_lock
+                    .get_ancestor_value(key)
+                    .map(|value| (ancestor_key.clone(), value.clone())),
                 None => None,
             },
             Err(e) => {

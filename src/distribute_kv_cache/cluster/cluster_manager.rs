@@ -65,9 +65,9 @@ impl ClusterManager {
             return Ok(node.clone());
         }
 
-        return Err(DatenLordError::CacheClusterErr {
+        Err(DatenLordError::CacheClusterErr {
             context: vec![format!("Failed to get node by key: {:?}", key)],
-        });
+        })
     }
 
     /// Watch the distribute cache nodes info,
@@ -307,7 +307,7 @@ impl ClusterManagerInner {
     /// Update node info
     pub async fn update_node_in_cluster(&self) -> DatenLordResult<()> {
         let node = self.node.load();
-        let key = &KeyType::CacheNode(node.endpoint().to_owned());
+        let key = &KeyType::CacheNode(node.endpoint().clone());
         let node_session = self.node_session.load();
         let Some(current_session) = node_session.as_ref().cloned() else {
             let current_node = self.node.load();
@@ -361,7 +361,7 @@ impl ClusterManagerInner {
         // Try to register current node to etcd
         self.kv_engine
             .set(
-                &KeyType::CacheNode(current_node_info.endpoint().to_owned()),
+                &KeyType::CacheNode(current_node_info.endpoint().clone()),
                 &ValueType::Json(serde_json::to_value(current_node_info.as_ref().clone())?),
                 Some(SetOption {
                     // Set lease
@@ -626,7 +626,7 @@ impl ClusterManagerInner {
         let mut watch_event = false;
         loop {
             tokio::select! {
-                _ = token.cancelled() => {
+                () = token.cancelled() => {
                     // Cancelled
                     break;
                 }

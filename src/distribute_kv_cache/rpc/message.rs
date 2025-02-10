@@ -748,11 +748,11 @@ where
 
         Ok(KVCacheIndexInsertRequest {
             block_size,
-            kv_cache_key,
+            kv_cache_id,
             offset,
             size,
             kv_cache_key_len,
-            kv_cache_id,
+            kv_cache_key,
         })
     }
 
@@ -781,11 +781,11 @@ where
 
         Ok(KVCacheIndexInsertRequest {
             block_size,
-            kv_cache_key,
+            kv_cache_id,
             offset,
             size,
             kv_cache_key_len,
-            kv_cache_id,
+            kv_cache_key,
         })
     }
 }
@@ -966,7 +966,7 @@ where
 }
 
 /// The request to remove kv cache index.
-/// TODO: check both kv_cache_id and kv_cache_key to make sure current deletion is correct.
+/// TODO: check both `kv_cache_id` and `kv_cache_key` to make sure current deletion is correct.
 #[derive(Debug, Default, Clone)]
 pub struct KVCacheIndexRemoveRequest<K> {
     /// The kv block size.

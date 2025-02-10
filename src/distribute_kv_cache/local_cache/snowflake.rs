@@ -3,7 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The epoch of the Twitter snowflake algorithm
-const TWEPOCH: i64 = 1288834974657;
+const TWEPOCH: i64 = 1_288_834_974_657;
 /// The number of bits for the worker ID
 const WORKER_ID_BITS: u64 = 5;
 /// The number of bits for the datacenter ID
@@ -34,19 +34,16 @@ pub struct Snowflake {
 
 impl Snowflake {
     /// Create a new Snowflake ID generator
+    #[must_use]
     pub fn new(datacenter_id: i64, worker_id: i64) -> Snowflake {
-        if worker_id > MAX_WORKER_ID || worker_id < 0 {
-            panic!(
-                "worker Id can't be greater than {} or less than 0",
-                MAX_WORKER_ID
-            );
-        }
-        if datacenter_id > MAX_DATACENTER_ID || datacenter_id < 0 {
-            panic!(
-                "datacenter Id can't be greater than {} or less than 0",
-                MAX_DATACENTER_ID
-            );
-        }
+        assert!(
+            (0..=MAX_WORKER_ID).contains(&worker_id),
+            "worker Id can't be greater than {MAX_WORKER_ID} or less than 0"
+        );
+        assert!(
+            (0..=MAX_DATACENTER_ID).contains(&datacenter_id),
+            "datacenter Id can't be greater than {MAX_DATACENTER_ID} or less than 0"
+        );
         Snowflake {
             datacenter_id,
             worker_id,
@@ -59,12 +56,11 @@ impl Snowflake {
     pub fn next_id(&mut self) -> i64 {
         let mut timestamp = self.time_gen();
 
-        if timestamp < self.last_timestamp {
-            panic!(
-                "Clock moved backwards. Refusing to generate id for {} milliseconds",
-                self.last_timestamp - timestamp
-            );
-        }
+        assert!(
+            timestamp >= self.last_timestamp,
+            "Clock moved backwards. Refusing to generate id for {} milliseconds",
+            self.last_timestamp - timestamp
+        );
 
         if self.last_timestamp == timestamp {
             self.sequence = (self.sequence + 1) & SEQUENCE_MASK;

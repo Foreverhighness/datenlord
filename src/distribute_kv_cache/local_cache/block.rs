@@ -39,7 +39,8 @@ impl Hash for MetaData {
 }
 
 impl MetaData {
-    /// Create a new MetaData instance
+    /// Create a new `MetaData` instance
+    #[must_use]
     pub fn new(inum: u64, version: u64, offset: u64, size: u64) -> Self {
         MetaData {
             inum,
@@ -49,27 +50,32 @@ impl MetaData {
         }
     }
 
-    /// Get the inum of the MetaData
+    /// Get the inum of the `MetaData`
+    #[must_use]
     pub fn get_inum(&self) -> u64 {
         self.inum
     }
 
-    /// Get the version of the MetaData
+    /// Get the version of the `MetaData`
+    #[must_use]
     pub fn get_version(&self) -> u64 {
         self.version
     }
 
-    /// Get the offset of the MetaData
+    /// Get the offset of the `MetaData`
+    #[must_use]
     pub fn get_offset(&self) -> u64 {
         self.offset
     }
 
-    /// Get the size of the MetaData
+    /// Get the size of the `MetaData`
+    #[must_use]
     pub fn get_size(&self) -> u64 {
         self.size
     }
 
-    /// Convert the MetaData to a string
+    /// Convert the `MetaData` to a string
+    #[must_use]
     pub fn to_id(&self) -> String {
         // same as get_block_path in backend_impl.rs
         // format!(
@@ -80,19 +86,20 @@ impl MetaData {
     }
 
     /// TODO: Update to use .block
-    /// Create a MetaData from a string
+    /// Create a `MetaData` from a string
+    #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
         let parts: Vec<&str> = id.split('_').collect();
         if parts.len() != 4 {
             return None;
         }
 
-        return Some(MetaData {
+        Some(MetaData {
             inum: parts[0].parse().unwrap(),
             version: parts[1].parse().unwrap(),
             offset: parts[2].parse().unwrap(),
             size: parts[3].parse().unwrap(),
-        });
+        })
     }
 }
 
