@@ -316,7 +316,10 @@ impl ClusterManagerInner {
                 current_node.endpoint()
             );
             return Err(DatenLordError::CacheClusterErr {
-                context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                context: vec![format!(
+                    "Current {} session is invalid",
+                    current_node.endpoint()
+                )],
             });
         };
 
@@ -348,7 +351,10 @@ impl ClusterManagerInner {
                 current_node.endpoint()
             );
             return Err(DatenLordError::CacheClusterErr {
-                context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                context: vec![format!(
+                    "Current {} session is invalid",
+                    current_node.endpoint()
+                )],
             });
         };
 
@@ -387,7 +393,10 @@ impl ClusterManagerInner {
                     current_node.endpoint()
                 );
                 return Err(DatenLordError::CacheClusterErr {
-                    context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                    context: vec![format!(
+                        "Current {} session is invalid",
+                        current_node.endpoint()
+                    )],
                 });
             }
             session
@@ -398,7 +407,10 @@ impl ClusterManagerInner {
                 current_node.endpoint()
             );
             return Err(DatenLordError::CacheClusterErr {
-                context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                context: vec![format!(
+                    "Current {} session is invalid",
+                    current_node.endpoint()
+                )],
             });
         };
 
@@ -466,7 +478,10 @@ impl ClusterManagerInner {
                     current_node.endpoint()
                 );
                 return Err(DatenLordError::CacheClusterErr {
-                    context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                    context: vec![format!(
+                        "Current {} session is invalid",
+                        current_node.endpoint()
+                    )],
                 });
             };
 
@@ -543,7 +558,10 @@ impl ClusterManagerInner {
                     current_node.endpoint()
                 );
                 return Err(DatenLordError::CacheClusterErr {
-                    context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                    context: vec![format!(
+                        "Current {} session is invalid",
+                        current_node.endpoint()
+                    )],
                 });
             }
 
@@ -571,7 +589,10 @@ impl ClusterManagerInner {
                 current_node.endpoint()
             );
             return Err(DatenLordError::CacheClusterErr {
-                context: vec![format!("Current {} session is invalid", current_node.endpoint())],
+                context: vec![format!(
+                    "Current {} session is invalid",
+                    current_node.endpoint()
+                )],
             });
         }
 

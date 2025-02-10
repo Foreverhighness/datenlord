@@ -24,7 +24,7 @@ where
 
     std::mem::forget(input);
 
-    unsafe { Vec::from_raw_parts(ptr as *mut u8, len, capacity)}
+    unsafe { Vec::from_raw_parts(ptr as *mut u8, len, capacity) }
 }
 
 // Zero copy conversion between u8 and num key buffers.
@@ -32,7 +32,11 @@ fn u8_to_num_buffer<K>(input: Vec<u8>) -> Vec<K>
 where
     K: num::Num,
 {
-    assert_eq!(input.len() % mem::size_of::<K>(), 0, "Buffer length must be a multiple of key size");
+    assert_eq!(
+        input.len() % mem::size_of::<K>(),
+        0,
+        "Buffer length must be a multiple of key size"
+    );
     let len = input.len() / mem::size_of::<K>();
     let ptr = input.as_ptr();
     let capacity = input.capacity() / mem::size_of::<K>();
@@ -530,7 +534,8 @@ pub struct KVCacheIndexMatchRequest<K> {
 }
 
 impl<K> Encode for KVCacheIndexMatchRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Encode the kv cache index match request into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
@@ -543,7 +548,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> Decode for KVCacheIndexMatchRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Decode the byte buffer into a kv cache index match request.
     fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
@@ -553,7 +559,9 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let block_size = get_u64_from_buf(buf, 0)?;
         let remaining = &buf[8..];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
 
         // Convert the remaining bytes into u32 values.
@@ -577,7 +585,9 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         // Convert the remaining bytes into u32 values.
         let remaining = &buf[8..];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
 
         // Convert to vec<u8>, contains copy here.
@@ -592,7 +602,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> ActualSize for KVCacheIndexMatchRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Get the actual size of the request.
     fn actual_size(&self) -> u64 {
@@ -690,7 +701,8 @@ pub struct KVCacheIndexInsertRequest<K> {
 }
 
 impl<K> Encode for KVCacheIndexInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Encode the kv cache index insert request into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
@@ -707,7 +719,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> Decode for KVCacheIndexInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Decode the byte buffer into a kv cache index insert request.
     fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
@@ -721,9 +734,11 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let kv_cache_key_len = get_u64_from_buf(buf, 32)?;
         debug!("kv_cache_key_len: {}", kv_cache_key_len);
         // Give a range to get the remaining bytes.
-        let remaining = &buf[40..40+u64_to_usize(kv_cache_key_len)*4];
+        let remaining = &buf[40..40 + u64_to_usize(kv_cache_key_len) * 4];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
         // Convert to vec<u8>, contains copy here.
         // TODO: change to zero copy conversion.
@@ -753,9 +768,11 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let kv_cache_key_len = get_u64_from_buf(&buf, 32)?;
         // TODO: change to bytes
         // Convert the remaining bytes into u32 values.
-        let remaining = &buf[40..40+u64_to_usize(kv_cache_key_len)*4];
+        let remaining = &buf[40..40 + u64_to_usize(kv_cache_key_len) * 4];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
         // Convert to vec<u8>, contains copy here.
         let buffer = remaining.to_vec();
@@ -774,7 +791,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> ActualSize for KVCacheIndexInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Get the actual size of the request.
     fn actual_size(&self) -> u64 {
@@ -785,7 +803,11 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let offset_len = usize_to_u64(mem::size_of_val(&self.offset));
         let size_len = usize_to_u64(mem::size_of_val(&self.size));
         let kv_cache_key_len_len = usize_to_u64(mem::size_of_val(&self.kv_cache_key_len));
-        debug!("self.kv_cache_key: {:?} self.kv_cache_key len: {:?}", self.kv_cache_key, self.kv_cache_key.len());
+        debug!(
+            "self.kv_cache_key: {:?} self.kv_cache_key len: {:?}",
+            self.kv_cache_key,
+            self.kv_cache_key.len()
+        );
         debug!(
             "kv_cache_key_len: {}, block_size_len: {}, kv_cache_id_len: {}, offset_len: {}, size_len: {}, kv_cache_key_len_len: {}",
             kv_cache_key_len, block_size_len, kv_cache_id_len, offset_len, size_len, kv_cache_key_len_len
@@ -860,7 +882,8 @@ pub struct KVCacheIndexBatchInsertRequest<K> {
 }
 
 impl<K> Encode for KVCacheIndexBatchInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Encode the kv cache index batch insert request into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
@@ -874,7 +897,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> Decode for KVCacheIndexBatchInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Decode the byte buffer into a kv cache index batch insert request.
     fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
@@ -927,7 +951,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> ActualSize for KVCacheIndexBatchInsertRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Get the actual size of the request.
     fn actual_size(&self) -> u64 {
@@ -951,7 +976,8 @@ pub struct KVCacheIndexRemoveRequest<K> {
 }
 
 impl<K> Encode for KVCacheIndexRemoveRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Encode the kv cache index remove request into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
@@ -963,7 +989,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> Decode for KVCacheIndexRemoveRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Decode the byte buffer into a kv cache index remove request.
     fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
@@ -973,7 +1000,9 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let block_size = get_u64_from_buf(buf, 0)?;
         let remaining = &buf[8..];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
 
         // Convert to vec<u8>, contains copy here.
@@ -995,7 +1024,9 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
         let block_size = get_u64_from_buf(&buf, 0)?;
         let remaining = &buf[8..];
         if remaining.len() % mem::size_of::<K>() != 0 {
-            return Err(RpcError::InternalError("Invalid length for kv_cache_key".to_owned()));
+            return Err(RpcError::InternalError(
+                "Invalid length for kv_cache_key".to_owned(),
+            ));
         }
 
         // Convert the remaining bytes into u32 values.
@@ -1012,7 +1043,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> ActualSize for KVCacheIndexRemoveRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Get the actual size of the request.
     fn actual_size(&self) -> u64 {
@@ -1152,7 +1184,7 @@ impl Encode for KVBlockGetResponse {
         // buf.extend_from_slice(&self.data);
         // buf.put_slice(&self.data);
         unsafe {
-            buf.set_len(17+self.data.len());
+            buf.set_len(17 + self.data.len());
         }
         debug!("encode KVBlockGetResponse data cost: {:?}", start.elapsed());
     }
@@ -1232,7 +1264,10 @@ impl Decode for KVBlockGetResponse {
 
         // let data = vec![];
         // Use unsafe to avoid copy
-        debug!("decode decode_large_data KVBlockGetResponse data cost: {:?}", start.elapsed());
+        debug!(
+            "decode decode_large_data KVBlockGetResponse data cost: {:?}",
+            start.elapsed()
+        );
         let data_len = usize_to_u64(data.len());
         if data_len != block_size {
             return Err(RpcError::InternalError(format!(
@@ -1268,7 +1303,10 @@ impl Encode for KVBlockPutRequest {
         let start = std::time::Instant::now();
         // TODO: change this encode type
         buf.put_slice(&self.data);
-        debug!("encode KVBlockPutRequest bytes mut data cost: {:?}", start.elapsed());
+        debug!(
+            "encode KVBlockPutRequest bytes mut data cost: {:?}",
+            start.elapsed()
+        );
 
         // let tempdata = self.data.clone();
         // // Test to copy to Bytes
@@ -1483,7 +1521,8 @@ pub enum KVCacheRequest<K> {
 }
 
 impl<K> Encode for KVCacheRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug + Send + Sync
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug + Send + Sync,
 {
     /// Encode the kv cache request into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
@@ -1499,7 +1538,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug + Send + Sync
 }
 
 impl<K> ActualSize for KVCacheRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Get the actual size of the request.
     fn actual_size(&self) -> u64 {
@@ -1515,7 +1555,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> KVCacheRequest<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     #[allow(unused)]
     /// Decode the byte buffer into a kv cache request.
@@ -1641,7 +1682,8 @@ pub struct KVCachePacket<K> {
 }
 
 impl<K> fmt::Debug for KVCachePacket<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KVCachePacket")
@@ -1653,7 +1695,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> KVCachePacket<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Create a new kv cache packet.
     #[must_use]
@@ -1676,7 +1719,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 }
 
 impl<K> Encode for KVCachePacket<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug,
 {
     /// Encode the kv cache packet into a byte buffer.
     fn encode(&self, buffer: &mut BytesMut) {
@@ -1686,7 +1730,8 @@ where K: num::Num + Send + Sync + Clone + fmt::Debug
 
 #[async_trait]
 impl<K> Packet for KVCachePacket<K>
-where K: num::Num + Send + Sync + Clone + fmt::Debug + Send + Sync + Clone
+where
+    K: num::Num + Send + Sync + Clone + fmt::Debug + Send + Sync + Clone,
 {
     /// Get the sequence number of the packet.
     fn seq(&self) -> u64 {
@@ -1967,7 +2012,10 @@ mod test {
         assert_eq!(decoded_request.indexes[0].kv_cache_id, kv_cache_id);
         assert_eq!(decoded_request.indexes[0].offset, 456);
         assert_eq!(decoded_request.indexes[0].size, 789);
-        assert_eq!(decoded_request.indexes[0].kv_cache_key_len, kv_cache_key_len);
+        assert_eq!(
+            decoded_request.indexes[0].kv_cache_key_len,
+            kv_cache_key_len
+        );
         assert_eq!(decoded_request.indexes[0].kv_cache_key, kv_cache_key);
     }
 
@@ -2009,7 +2057,8 @@ mod test {
         assert_eq!(decoded_request.block_size, block_size);
         assert_eq!(decoded_request.kv_cache_key, kv_cache_key);
 
-        let decoded_request = KVCacheIndexMatchRequest::<u32>::decode_large_data(buffer.freeze()).unwrap();
+        let decoded_request =
+            KVCacheIndexMatchRequest::<u32>::decode_large_data(buffer.freeze()).unwrap();
         assert_eq!(decoded_request.block_size, block_size);
         assert_eq!(decoded_request.kv_cache_key, kv_cache_key);
     }

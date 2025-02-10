@@ -277,7 +277,10 @@ where
         };
         let local_prefix_len = local_kv_cache_meta.prefix.len().cast::<u64>();
         let start_1 = start.elapsed();
-        debug!("local_cache_lock.match_prefix(prefix.clone()) check Time cost: {:?}", start_1);
+        debug!(
+            "local_cache_lock.match_prefix(prefix.clone()) check Time cost: {:?}",
+            start_1
+        );
 
         // 2. Match prefix to get the block id and target node
         let (kv_block_meta, node_address) = match self.inner.match_prefix(prefix.clone()).await {
@@ -289,16 +292,16 @@ where
                 (kv_block_meta, node_address)
             }
             Err(err) => {
-                error!(
-                    "Failed to match prefix: {:?} with error: {:?}",
-                    prefix, err
-                );
+                error!("Failed to match prefix: {:?} with error: {:?}", prefix, err);
                 // Return a empty data
                 (KVCacheMeta::default(), String::new())
             }
         };
         let start_2 = start.elapsed();
-        debug!("self.inner.match_prefix(prefix.clone()).await check Time cost: {:?}", start_2 - start_1);
+        debug!(
+            "self.inner.match_prefix(prefix.clone()).await check Time cost: {:?}",
+            start_2 - start_1
+        );
 
         let remote_prefix_len = kv_block_meta.prefix.len().cast::<u64>();
         // println!(
@@ -345,7 +348,10 @@ where
         };
         let local_prefix_len = local_kv_cache_meta.prefix.len().cast::<u64>();
         let start_1 = start.elapsed();
-        debug!("local_cache_lock.match_prefix(prefix.clone()) check Time cost: {:?}", start_1);
+        debug!(
+            "local_cache_lock.match_prefix(prefix.clone()) check Time cost: {:?}",
+            start_1
+        );
 
         // 2. Match prefix to get the block id and target node
         let (kv_block_meta, node_address) = match self.inner.match_prefix(prefix.clone()).await {
@@ -357,16 +363,16 @@ where
                 (kv_block_meta, node_address)
             }
             Err(err) => {
-                error!(
-                    "Failed to match prefix: {:?} with error: {:?}",
-                    prefix, err
-                );
+                error!("Failed to match prefix: {:?} with error: {:?}", prefix, err);
                 // Return a empty data
                 (KVCacheMeta::default(), String::new())
             }
         };
         let start_2 = start.elapsed();
-        debug!("self.inner.match_prefix(prefix.clone()).await check Time cost: {:?}", start_2 - start_1);
+        debug!(
+            "self.inner.match_prefix(prefix.clone()).await check Time cost: {:?}",
+            start_2 - start_1
+        );
 
         let remote_prefix_len = kv_block_meta.prefix.len().cast::<u64>();
         // println!(
@@ -377,7 +383,6 @@ where
             "Matched remote kv block meta: {:?} node_address: {:?}",
             kv_block_meta, node_address
         );
-
 
         // If local prefix length is less than remote prefix length, we will get the block from the local cache
         if local_prefix_len >= remote_prefix_len {
@@ -403,15 +408,17 @@ where
             return Ok((Vec::new(), bytes::Bytes::new()));
         }
         let start_3 = start.elapsed();
-        debug!("local_cache_lock.try_load(local_kv_cache_meta.clone()) check Time cost: {:?}", start_3 - start_2);
-
+        debug!(
+            "local_cache_lock.try_load(local_kv_cache_meta.clone()) check Time cost: {:?}",
+            start_3 - start_2
+        );
 
         // 3. Get the block from the distribute cache
         // TODO: update string key with u64
         let block_data = match self
-        .inner
-        .get_block(node_address.clone(), kv_block_meta.block_id)
-        .await
+            .inner
+            .get_block(node_address.clone(), kv_block_meta.block_id)
+            .await
         {
             Ok(data) => data,
             Err(err) => {
@@ -442,7 +449,10 @@ where
         // let mut data = Vec::with_capacity(size);
         // data.extend_from_slice(&block_data[offset..offset + size]);
 
-        Ok((kv_block_meta.prefix, block_data.slice(offset..offset + size)))
+        Ok((
+            kv_block_meta.prefix,
+            block_data.slice(offset..offset + size),
+        ))
     }
 
     /// Insert a block to the distribute cache
@@ -468,7 +478,10 @@ where
             current_block_id
         );
         let start_2 = start.elapsed();
-        debug!("block_cache.get_block_id() check Time cost: {:?}", start_2 - start_1);
+        debug!(
+            "block_cache.get_block_id() check Time cost: {:?}",
+            start_2 - start_1
+        );
 
         while current_block_id == UNUSED_KV_BLOCK_ID {
             let new_block_id = self.inner.alloc_block_id().await?;
@@ -477,7 +490,10 @@ where
             current_block_id = new_block_id;
         }
         let start_3 = start.elapsed();
-        debug!("block_cache.clear(new_block_id) check Time cost: {:?}", start_3 - start_2);
+        debug!(
+            "block_cache.clear(new_block_id) check Time cost: {:?}",
+            start_3 - start_2
+        );
 
         let next_offset = block_cache.get_next_offset();
         let kv_cache_meta = KVCacheMeta {
@@ -487,7 +503,10 @@ where
             prefix: prefix.clone(),
         };
         let start_4 = start.elapsed();
-        debug!("block_cache.get_next_offset() check Time cost: {:?}", start_4 - start_3);
+        debug!(
+            "block_cache.get_next_offset() check Time cost: {:?}",
+            start_4 - start_3
+        );
 
         match block_cache.insert(kv_cache_meta, &data) {
             Ok(()) => {
@@ -496,7 +515,10 @@ where
                     current_block_id
                 );
                 let start_5 = start.elapsed();
-                debug!("block_cache.insert(kv_cache_meta, &data) check Time cost: {:?}", start_5 - start_4);
+                debug!(
+                    "block_cache.insert(kv_cache_meta, &data) check Time cost: {:?}",
+                    start_5 - start_4
+                );
             }
             Err(err) => {
                 debug!("Failed to insert kv cache to the block cache: {:?}, try to allocate new block cache", err);
@@ -506,7 +528,10 @@ where
                 let kv_cache_metas = block_cache.get_kv_cache_metas();
 
                 let start_6 = start.elapsed();
-                debug!("block_cache.get_kv_block() check Time cost: {:?}", start_6 - start_4);
+                debug!(
+                    "block_cache.get_kv_block() check Time cost: {:?}",
+                    start_6 - start_4
+                );
 
                 // Insert the block to the distribute cache
                 let node = self
@@ -522,20 +547,29 @@ where
                 self.inner.put_blocks(addr.clone(), vec![kv_block]).await?;
 
                 let start_7 = start.elapsed();
-                debug!("self.inner.put_blocks(addr.clone(), vec![kv_block]) check Time cost: {:?}", start_7 - start_6_2);
+                debug!(
+                    "self.inner.put_blocks(addr.clone(), vec![kv_block]) check Time cost: {:?}",
+                    start_7 - start_6_2
+                );
 
                 // If ok, insert the indexes to the distribute cache
                 self.inner.insert_indexes(kv_cache_metas, addr).await?;
 
                 let start_8 = start.elapsed();
-                debug!("self.inner.insert_indexes(kv_cache_metas, addr).await? check Time cost: {:?}", start_8 - start_7);
+                debug!(
+                    "self.inner.insert_indexes(kv_cache_metas, addr).await? check Time cost: {:?}",
+                    start_8 - start_7
+                );
 
                 // If ok, clear the block cache
                 let current_block_id = self.inner.alloc_block_id().await?;
                 block_cache.clear(current_block_id);
 
                 let start_9 = start.elapsed();
-                debug!("block_cache.clear(current_block_id) check Time cost: {:?}", start_9 - start_8);
+                debug!(
+                    "block_cache.clear(current_block_id) check Time cost: {:?}",
+                    start_9 - start_8
+                );
 
                 // Try to insert the kv cache meta again
                 let next_offset = block_cache.get_next_offset();
@@ -548,7 +582,10 @@ where
                 block_cache.insert(kv_cache_meta, &data)?;
 
                 let start_10 = start.elapsed();
-                debug!("block_cache.insert(kv_cache_meta, &data) check Time cost: {:?}", start_10 - start_9);
+                debug!(
+                    "block_cache.insert(kv_cache_meta, &data) check Time cost: {:?}",
+                    start_10 - start_9
+                );
             }
         }
 
@@ -966,7 +1003,10 @@ where
             tx.clone(),
         );
         let start_2 = start.elapsed();
-        debug!("KVCachePacket::new check Time cost: {:?}", start_2 - start_1);
+        debug!(
+            "KVCachePacket::new check Time cost: {:?}",
+            start_2 - start_1
+        );
 
         let rpc_client = self.get_client(addr.clone()).await?;
         rpc_client.send_request(packet).await.map_err(|err| {
@@ -976,7 +1016,10 @@ where
         })?;
 
         let start_3 = start.elapsed();
-        debug!("rpc_client.send_request(packet) check Time cost: {:?}", start_3 - start_2);
+        debug!(
+            "rpc_client.send_request(packet) check Time cost: {:?}",
+            start_3 - start_2
+        );
 
         match rx.recv_async().await {
             Ok(Ok(response)) => {
@@ -1164,8 +1207,10 @@ mod tests {
             .unwrap();
         let client = Arc::new(client);
         let node = Node::default();
-        let distribute_kvcache_client_inner =
-            DistributeKVCacheClientInner::<u32>::new(Arc::new(ClusterManager::new(client, node)), 64);
+        let distribute_kvcache_client_inner = DistributeKVCacheClientInner::<u32>::new(
+            Arc::new(ClusterManager::new(client, node)),
+            64,
+        );
 
         let res = distribute_kvcache_client_inner.get_client(addr).await;
         assert!(res.is_ok());

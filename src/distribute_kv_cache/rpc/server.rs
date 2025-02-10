@@ -1,5 +1,8 @@
 use std::{
-    cell::UnsafeCell, fmt::{self, Debug}, io::IoSlice, sync::Arc
+    cell::UnsafeCell,
+    fmt::{self, Debug},
+    io::IoSlice,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -166,8 +169,7 @@ where
         debug!("Server resize buffer to size {:?} cost: {:?}", len, start_1);
 
         let reader = self.get_stream_mut();
-        match read_exact_timeout!(reader, req_buffer, self.timeout_options.read_timeout).await
-        {
+        match read_exact_timeout!(reader, req_buffer, self.timeout_options.read_timeout).await {
             Ok(size) => {
                 debug!("Received request body: {:?}", size);
                 Ok(())

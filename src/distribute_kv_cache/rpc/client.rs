@@ -115,7 +115,12 @@ where
         let mut req_buffer: &mut BytesMut = unsafe { &mut *self.resp_buf.get() };
         if req_buffer.capacity() < u64_to_usize(len) {
             req_buffer.reserve(u64_to_usize(len) + 1);
-            debug!("Client reserve buffer {:?} to size {:?} cost: {:?}", u64_to_usize(len), len, start.elapsed());
+            debug!(
+                "Client reserve buffer {:?} to size {:?} cost: {:?}",
+                u64_to_usize(len),
+                len,
+                start.elapsed()
+            );
         }
         // req_buffer.resize(u64_to_usize(len), 0);
         // req_buffer.resize(u64_to_usize(len), 0);
@@ -123,7 +128,12 @@ where
             req_buffer.set_len(u64_to_usize(len));
         }
         let start_1 = start.elapsed();
-        debug!("Client resize buffer {:?} to size {:?} cost: {:?}", u64_to_usize(len), len, start_1);
+        debug!(
+            "Client resize buffer {:?} to size {:?} cost: {:?}",
+            u64_to_usize(len),
+            len,
+            start_1
+        );
 
         let reader = self.get_stream_mut();
         match read_exact_timeout!(reader, &mut req_buffer, self.timeout_options.read_timeout).await
@@ -144,7 +154,12 @@ where
         let start = tokio::time::Instant::now();
         if req_buffer.capacity() < u64_to_usize(len) {
             req_buffer.reserve(u64_to_usize(len) + 1);
-            debug!("Client reserve buffer {:?} to size {:?} cost: {:?}", u64_to_usize(len), len, start.elapsed());
+            debug!(
+                "Client reserve buffer {:?} to size {:?} cost: {:?}",
+                u64_to_usize(len),
+                len,
+                start.elapsed()
+            );
         }
         // req_buffer.resize(u64_to_usize(len), 0);
         // req_buffer.resize(u64_to_usize(len), 0);
@@ -152,11 +167,15 @@ where
             req_buffer.set_len(u64_to_usize(len));
         }
         let start_1 = start.elapsed();
-        debug!("Client resize buffer {:?} to size {:?} cost: {:?}", u64_to_usize(len), len, start_1);
+        debug!(
+            "Client resize buffer {:?} to size {:?} cost: {:?}",
+            u64_to_usize(len),
+            len,
+            start_1
+        );
 
         let reader = self.get_stream_mut();
-        match read_exact_timeout!(reader, req_buffer, self.timeout_options.read_timeout).await
-        {
+        match read_exact_timeout!(reader, req_buffer, self.timeout_options.read_timeout).await {
             Ok(size) => {
                 debug!("{:?} Received response body len: {:?}", self, size);
                 Ok(())
@@ -322,9 +341,14 @@ where
                                 }
 
                                 // Take the packet task and recv the response
-                                let resp_buffer: &mut BytesMut = unsafe { &mut *self.resp_buf.get() };
+                                let resp_buffer: &mut BytesMut =
+                                    unsafe { &mut *self.resp_buf.get() };
                                 // Fix: add a retry here in case of the task is not ready or failed
-                                match self.packets_keeper.take_task(header_seq, resp_buffer.clone()).await {
+                                match self
+                                    .packets_keeper
+                                    .take_task(header_seq, resp_buffer.clone())
+                                    .await
+                                {
                                     Ok(()) => {
                                         debug!("{:?} Received response: {:?}", self, header_seq);
                                     }
@@ -334,7 +358,8 @@ where
                                 }
                             } else {
                                 debug!("{:?} Try to receive huge response body with size {:?} in user buffer", self, header.len);
-                                let mut resp_buffer = BytesMut::with_capacity(u64_to_usize(header.len));
+                                let mut resp_buffer =
+                                    BytesMut::with_capacity(u64_to_usize(header.len));
                                 match self.recv_huge_len(header.len, &mut resp_buffer).await {
                                     Ok(()) => {}
                                     Err(err) => {

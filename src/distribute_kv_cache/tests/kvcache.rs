@@ -156,7 +156,10 @@ mod tests {
         }
         let elapsed = start.elapsed();
         println!("Elapsed: {:?}", elapsed);
-        println!("Speed: {:?}", 16777216.0 / 1024.0 / 1024.0 / elapsed.as_secs_f64());
+        println!(
+            "Speed: {:?}",
+            16777216.0 / 1024.0 / 1024.0 / elapsed.as_secs_f64()
+        );
 
         // // Test get 4 from the kv cache client, should return error
         // let prefix = "test4";

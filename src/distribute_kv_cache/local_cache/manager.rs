@@ -1,5 +1,7 @@
 use std::{
-    collections::HashMap, fmt::Debug, sync::{atomic::AtomicU64, Arc, RwLock}
+    collections::HashMap,
+    fmt::Debug,
+    sync::{atomic::AtomicU64, Arc, RwLock},
 };
 
 use radix_trie::Trie;
@@ -40,7 +42,11 @@ where
     pub fn put(&mut self, key: K, block: Arc<RwLock<Block>>) {
         // If the cache is full, evict the least recently used block
         if self.cache.len() >= self.policy.capacity() {
-            println!("Cache {:?} is full policy is {:?}, evict the least recently used block", self.cache.len(), self.policy.size());
+            println!(
+                "Cache {:?} is full policy is {:?}, evict the least recently used block",
+                self.cache.len(),
+                self.policy.size()
+            );
             if let Some(evicted_block) = self.policy.evict() {
                 println!("Evict block: {:?}", evicted_block);
                 // self.cache.remove(&evicted_block.clone());
@@ -315,7 +321,6 @@ impl KVBlockManager {
         // self.backend
         //     .store(&relative_path, block.get_data().as_slice())
         //     .await
-
     }
 
     /// Invalidate the block

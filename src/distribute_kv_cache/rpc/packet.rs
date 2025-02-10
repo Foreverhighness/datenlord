@@ -33,14 +33,16 @@ pub trait Decode {
     /// Decode the byte buffer into a data structure
     fn decode(_buf: &mut BytesMut) -> Result<Self, RpcError>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         unimplemented!("Not implemented for this type")
     }
 
     /// Decode the large data into a data structure
     fn decode_large_data(_buf: bytes::Bytes) -> Result<Self, RpcError>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         unimplemented!("Not implemented for this type")
     }
 }
@@ -279,11 +281,9 @@ impl<P: Packet + Send + Sync> PacketsKeeper<P> {
         // TODO: use a global atomic ticker(updated by check_loop) or read current time?
         let timestamp = self.current_time.elapsed().as_secs();
         packet.set_timestamp(timestamp);
-        self.buffer_packets_sender
-            .send(packet)
-            .map_err(|e| {
-                RpcError::InternalError(format!("Failed to send packet to buffer: {e:?}"))
-            })?;
+        self.buffer_packets_sender.send(packet).map_err(|e| {
+            RpcError::InternalError(format!("Failed to send packet to buffer: {e:?}"))
+        })?;
 
         Ok(())
     }
@@ -321,7 +321,10 @@ impl<P: Packet + Send + Sync> PacketsKeeper<P> {
         {
             let mut packets_inner = self.inner.lock().await;
             while let Ok(packet) = self.buffer_packets_receiver.try_recv() {
-                debug!("take_task self.buffer_packets_receiver.try_recv(): {:?}", packet);
+                debug!(
+                    "take_task self.buffer_packets_receiver.try_recv(): {:?}",
+                    packet
+                );
                 let seq = packet.seq();
                 packets_inner.add_task(seq, packet);
             }

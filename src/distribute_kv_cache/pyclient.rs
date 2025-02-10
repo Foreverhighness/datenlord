@@ -8,10 +8,8 @@ use datenlord::{
         logger::{init_logger, LogRole},
     },
     distribute_kv_cache::{
-        cluster::{
-            cluster_manager::ClusterManager,
-            node::Node,
-        }, kvclient::DistributeKVCacheClient,
+        cluster::{cluster_manager::ClusterManager, node::Node},
+        kvclient::DistributeKVCacheClient,
     },
     fs::kv_engine::{etcd_impl::EtcdKVEngine, KVEngine, KVEngineType},
     // metrics,
@@ -86,7 +84,10 @@ async fn main() -> DatenLordResult<()> {
     let node = Node::default();
     let cluster_manager = Arc::new(ClusterManager::new(kv_engine, node));
 
-    let kvcacheclient: Arc<DistributeKVCacheClient<u32>> = Arc::new(DistributeKVCacheClient::new(cluster_manager, config.block_size));
+    let kvcacheclient: Arc<DistributeKVCacheClient<u32>> = Arc::new(DistributeKVCacheClient::new(
+        cluster_manager,
+        config.block_size,
+    ));
     let kvcacheclient_clone = Arc::clone(&kvcacheclient);
     match kvcacheclient_clone.start_watch().await {
         Ok(()) => {
@@ -107,7 +108,7 @@ async fn main() -> DatenLordResult<()> {
             }
             "write" => {
                 let key = vec![1_u32, 2_u32, 3_u32, 4_u32];
-                let value  = vec![0_u8; config.block_size.cast()];
+                let value = vec![0_u8; config.block_size.cast()];
                 kvcacheclient.insert(key.clone(), value).await.unwrap();
             }
             _ => {
@@ -116,10 +117,12 @@ async fn main() -> DatenLordResult<()> {
         }
     }
 
-
     let end = start.elapsed();
     info!("Total time: {:?}", end);
-    info!("Throughput: {:?} MB/s", ((config.block_size * config.op_times) as f64) / 1024.0 / 1024.0 / end.as_secs_f64());
+    info!(
+        "Throughput: {:?} MB/s",
+        ((config.block_size * config.op_times) as f64) / 1024.0 / 1024.0 / end.as_secs_f64()
+    );
 
     // task_manager::wait_for_shutdown(&TASK_MANAGER)?.await;
     info!("KV cache server stopped");

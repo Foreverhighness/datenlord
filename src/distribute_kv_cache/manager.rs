@@ -184,7 +184,7 @@ impl Job for FileBlockHandler {
                         status: StatusCode::Success,
                         // 20241210 TODO: Need to return data
                         // data: block.get_data(),
-                        data: vec![]
+                        data: vec![],
                     };
                 }
             }
@@ -343,10 +343,13 @@ impl Job for KVBlockHandler {
         // Get current request type
         if let Ok(req_type) = ReqType::from_u8(self.header.op) {
             let buffer_start = tokio::time::Instant::now();
-            let mut resp_header_buffer = BytesMut::with_capacity(40*1024*1024);
+            let mut resp_header_buffer = BytesMut::with_capacity(40 * 1024 * 1024);
             let mut resp_bytes_vec: Vec<bytes::Bytes> = vec![];
             let buffer_start_0 = buffer_start.elapsed();
-            debug!("KVBlockHandler buffer_start BytesMut new: Time elapsed: {:?}", buffer_start_0);
+            debug!(
+                "KVBlockHandler buffer_start BytesMut new: Time elapsed: {:?}",
+                buffer_start_0
+            );
             let req_buffer = self.request.clone();
             let req_header = &self.header;
             match req_type {
@@ -380,7 +383,7 @@ impl Job for KVBlockHandler {
                     let block = self.cache_manager.read(metadata).await;
                     if let Ok(block) = block {
                         if let Some(block) = block {
-                            let data =  block.read().unwrap().get_data();
+                            let data = block.read().unwrap().get_data();
                             // let data = block.get_data();
                             if data.len() as u64 == req_body.block_size {
                                 kv_block_get_resp = KVBlockGetResponse {
@@ -400,20 +403,32 @@ impl Job for KVBlockHandler {
                         }
                     };
                     let start_1 = start.elapsed();
-                    debug!("KVBlockGetRequest read block: Time elapsed: {:?}", start_1 - start_0_2);
+                    debug!(
+                        "KVBlockGetRequest read block: Time elapsed: {:?}",
+                        start_1 - start_0_2
+                    );
 
                     // TODO: allocate enough buffer to store it.
                     // Prepare response body
                     // let mut resp_body_buffer = BytesMut::with_capacity(20*1024*1024);
                     // Get from header offset
-                    let mut resp_body_buffer = resp_header_buffer.split_off(packet::RESP_HEADER_SIZE.cast());
+                    let mut resp_body_buffer =
+                        resp_header_buffer.split_off(packet::RESP_HEADER_SIZE.cast());
                     // let mut resp_body_buffer = BytesMut::with_capacity(20*1024*1024);
                     // kv_block_get_resp.encode(&mut resp_body_buffer);
-                    let (body_len, extra_data) = kv_block_get_resp.encode_large_data(&mut resp_body_buffer);
-                    debug!("KVBlockGetRequest resp_body_buffer size: {:?}, capacity: {:?}", resp_body_buffer.len(), resp_body_buffer.capacity());
+                    let (body_len, extra_data) =
+                        kv_block_get_resp.encode_large_data(&mut resp_body_buffer);
+                    debug!(
+                        "KVBlockGetRequest resp_body_buffer size: {:?}, capacity: {:?}",
+                        resp_body_buffer.len(),
+                        resp_body_buffer.capacity()
+                    );
 
                     let start_2 = start.elapsed();
-                    debug!("KVBlockGetRequest encode: Time elapsed: {:?}", start_2 - start_1);
+                    debug!(
+                        "KVBlockGetRequest encode: Time elapsed: {:?}",
+                        start_2 - start_1
+                    );
 
                     // Prepare response header
                     let resp_header = RespHeader {
@@ -424,7 +439,10 @@ impl Job for KVBlockHandler {
                     resp_header.encode(&mut resp_header_buffer);
 
                     let start_3 = start.elapsed();
-                    debug!("KVBlockGetRequest encode header: Time elapsed: {:?}", start_3 - start_2);
+                    debug!(
+                        "KVBlockGetRequest encode header: Time elapsed: {:?}",
+                        start_3 - start_2
+                    );
 
                     // Combine response header and body
                     // resp_header_buffer.extend_from_slice(&resp_body_buffer);
@@ -433,7 +451,10 @@ impl Job for KVBlockHandler {
                     resp_bytes_vec.extend_from_slice(&extra_data);
 
                     let start_4 = start.elapsed();
-                    debug!("KVBlockGetRequest extend_from_slice: Time elapsed: {:?}", start_4 - start_3);
+                    debug!(
+                        "KVBlockGetRequest extend_from_slice: Time elapsed: {:?}",
+                        start_4 - start_3
+                    );
                 }
                 ReqType::KVBlockBatchPutRequest => {
                     let start = tokio::time::Instant::now();
@@ -457,12 +478,18 @@ impl Job for KVBlockHandler {
                         let meta_data = MetaData::new(block.kv_cache_id, 0, 0, 0);
                         let kv_block = Block::new(meta_data, block.data);
                         let block_start_0 = block_start.elapsed();
-                        debug!("KVBlockBatchPutRequest new block: Time elapsed: {:?}", block_start_0);
+                        debug!(
+                            "KVBlockBatchPutRequest new block: Time elapsed: {:?}",
+                            block_start_0
+                        );
                         match self.cache_manager.write(kv_block).await {
                             Ok(_) => {
                                 success_ids.push(block.kv_cache_id);
                                 let block_start_1 = block_start.elapsed();
-                                debug!("KVBlockBatchPutRequest write block: Time elapsed: {:?}", block_start_1 - block_start_0);
+                                debug!(
+                                    "KVBlockBatchPutRequest write block: Time elapsed: {:?}",
+                                    block_start_1 - block_start_0
+                                );
                             }
                             Err(err) => {
                                 error!("Failed to put block into cache: {:?}", err);
@@ -471,7 +498,10 @@ impl Job for KVBlockHandler {
                         }
                     }
                     let start_1 = start.elapsed();
-                    debug!("KVBlockBatchPutRequest Received request: Time elapsed: {:?}", start_1 - start_0);
+                    debug!(
+                        "KVBlockBatchPutRequest Received request: Time elapsed: {:?}",
+                        start_1 - start_0
+                    );
 
                     debug!(
                         "KVBlockBatchPutRequest: Success ids: {:?}, Failed ids: {:?}",
@@ -488,7 +518,8 @@ impl Job for KVBlockHandler {
 
                     // Prepare response body
                     // let mut resp_body_buffer = BytesMut::with_capacity(20*1024*1024);
-                    let mut resp_body_buffer = resp_header_buffer.split_off(packet::RESP_HEADER_SIZE.cast());
+                    let mut resp_body_buffer =
+                        resp_header_buffer.split_off(packet::RESP_HEADER_SIZE.cast());
                     kv_block_batch_put_resp.encode(&mut resp_body_buffer);
                     // Prepare response header
                     let resp_header = RespHeader {
@@ -498,14 +529,21 @@ impl Job for KVBlockHandler {
                     };
                     resp_header.encode(&mut resp_header_buffer);
                     let start_2 = start.elapsed();
-                    debug!("KVBlockBatchPutRequest BytesMut new: Time elapsed: {:?} size {:?}", start_2, resp_header_buffer.len());
+                    debug!(
+                        "KVBlockBatchPutRequest BytesMut new: Time elapsed: {:?} size {:?}",
+                        start_2,
+                        resp_header_buffer.len()
+                    );
 
                     // Combine response header and body
                     // resp_header_buffer.extend_from_slice(&resp_body_buffer);
                     resp_header_buffer.unsplit(resp_body_buffer);
                     resp_bytes_vec.push(resp_header_buffer.freeze());
                     let start_3 = start.elapsed();
-                    debug!("KVBlockBatchPutRequest extend_from_slice: Time elapsed: {:?}", start_3 - start_2);
+                    debug!(
+                        "KVBlockBatchPutRequest extend_from_slice: Time elapsed: {:?}",
+                        start_3 - start_2
+                    );
                 }
                 _ => {
                     debug!(
@@ -529,7 +567,7 @@ impl Job for KVBlockHandler {
 
             // TODO: change to vectored data
             match self.done_tx.send(resp_bytes_vec).await {
-            // match self.done_tx.send(vec![resp_header_buffer.freeze()]).await {
+                // match self.done_tx.send(vec![resp_header_buffer.freeze()]).await {
                 Ok(()) => {
                     debug!("Sent response to done channel");
                 }
@@ -624,13 +662,14 @@ where
                 ReqType::KVCacheIndexBatchInsertRequest => {
                     // Try to read the request body
                     // Decode the request body
-                    let req_body = match KVCacheIndexBatchInsertRequest::<K>::decode_large_data(req_buffer) {
-                        Ok(req) => req,
-                        Err(err) => {
-                            debug!("Failed to decode index request: {:?}", err);
-                            return;
-                        }
-                    };
+                    let req_body =
+                        match KVCacheIndexBatchInsertRequest::<K>::decode_large_data(req_buffer) {
+                            Ok(req) => req,
+                            Err(err) => {
+                                debug!("Failed to decode index request: {:?}", err);
+                                return;
+                            }
+                        };
 
                     debug!(
                         "KVCacheIndexInsertRequest: Received request: {:?}",
@@ -759,10 +798,7 @@ where
                     let kv_cache_id_allocate_resp = match longest_kv {
                         Some((key, value)) => match parse_kv_cache_index_value(&value) {
                             Ok((block_id, offset, size, addr)) => {
-                                debug!(
-                                    "KVCacheIndexMatchRequest: Matched value: {:?}",
-                                    value
-                                );
+                                debug!("KVCacheIndexMatchRequest: Matched value: {:?}", value);
                                 KVCacheIndexMatchResponse {
                                     block_size: req_body.block_size,
                                     kv_cache_key_len: usize_to_u64(key.len()),
@@ -829,7 +865,6 @@ where
         }
     }
 }
-
 
 /// The kv cache handler for the RPC server.
 #[derive(Clone, Debug)]
@@ -1161,7 +1196,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIdAllocateResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIdAllocateResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.kv_cache_id, 0);
 
         // Test alloc id request, the second alloc id should be 1
@@ -1188,7 +1225,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIdAllocateResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIdAllocateResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.kv_cache_id, 1);
 
         println!("resp_body: {:?}", resp_body);
@@ -1238,7 +1277,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexInsertResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexInsertResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::Success);
 
         println!("resp_body: {:?}", resp_body);
@@ -1269,7 +1310,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::Success);
         assert_eq!(resp_body.kv_cache_id, 0);
 
@@ -1302,7 +1345,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::Success);
         assert_eq!(resp_body.kv_cache_id, 0);
 
@@ -1334,11 +1379,12 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         println!("resp_body: {:?}", resp_body);
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
-
 
         // Test remove index request
         let (done_tx, mut done_rx) = tokio::sync::mpsc::channel(1);
@@ -1366,7 +1412,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexRemoveResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexRemoveResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::Success);
 
         // Test match index request failed
@@ -1395,7 +1443,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
 
@@ -1427,7 +1477,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVCacheIndexMatchResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::NotFound);
         assert_eq!(resp_body.kv_cache_id, 0);
 
@@ -1470,7 +1522,9 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVBlockBatchPutResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVBlockBatchPutResponse::decode(&mut BytesMut::from(resp_body_buffer))
+                .unwrap();
         assert_eq!(resp_body.block_size, 1);
         assert_eq!(resp_body.success_kv_cache_ids, vec![0]);
         assert_eq!(resp_body.success_batch_size, 1);
@@ -1503,14 +1557,18 @@ mod tests {
         let resp_body_buffer = resp_buffer.split_at(packet::RESP_HEADER_SIZE as usize).1;
         let resp_body_buffer = resp_body_buffer.to_vec();
         let resp_body_buffer = resp_body_buffer.as_slice();
-        let resp_body = message::KVBlockGetResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
+        let resp_body =
+            message::KVBlockGetResponse::decode(&mut BytesMut::from(resp_body_buffer)).unwrap();
         assert_eq!(resp_body.status, message::StatusCode::InternalError);
         assert_eq!(resp_body.kv_cache_id, 0);
         assert_eq!(resp_body.block_size, BLOCK_SIZE as u64);
         assert_eq!(resp_body.data.len(), BLOCK_SIZE);
 
         // decode with large data
-        let resp_body = message::KVBlockGetResponse::decode_large_data(BytesMut::from(resp_body_buffer).freeze()).unwrap();
+        let resp_body = message::KVBlockGetResponse::decode_large_data(
+            BytesMut::from(resp_body_buffer).freeze(),
+        )
+        .unwrap();
         assert_eq!(resp_body.status, message::StatusCode::InternalError);
         assert_eq!(resp_body.kv_cache_id, 0);
         assert_eq!(resp_body.block_size, BLOCK_SIZE as u64);
