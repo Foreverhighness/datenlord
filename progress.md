@@ -10,3 +10,12 @@
 ### 2025-02-10
 - setup build environment.
 - fix async-rdma compile error.
+
+### 2025-02-11
+- setup testing environment.
+
+```bash
+>>> sudo rdma link add rxe_0 type rxe netdev ens3
+>>> sudo rdma link show
+>>> ibv_devices
+```
