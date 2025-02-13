@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use async_rdma::RdmaBuilder;
 use clippy_utilities::Cast;
 use radix_trie::Trie;
 use tokio::sync::Mutex;
@@ -1032,7 +1033,15 @@ where
             };
             let addr_clone = addr.clone();
             let connect_stream = connect_timeout!(addr_clone, timeout_options.read_timeout).await?;
-            let rpc_client = RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options);
+
+            let rdma = RdmaBuilder::default()
+                .connect(addr.clone())
+                .await
+                .expect(&format!("TODO(fh): handle error, addr: {addr}"));
+            println!("connected");
+
+            let rpc_client =
+                RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options, Some(rdma));
             rpc_client.start_recv();
 
             // TODO: add ping into a loop.

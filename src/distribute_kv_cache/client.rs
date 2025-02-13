@@ -177,7 +177,7 @@ impl DistributeCacheClient {
                 let connect_stream =
                     connect_timeout!(addr_clone, timeout_options.read_timeout).await?;
                 let rpc_client =
-                    RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options);
+                    RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options, None);
                 rpc_client.start_recv();
 
                 // Test connection first, if current connection is not available, we will try to return quickly

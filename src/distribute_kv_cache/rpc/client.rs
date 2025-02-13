@@ -6,6 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use async_rdma::{LocalMrReadAccess, Rdma};
 use bytes::BytesMut;
 use futures::{pin_mut, Future};
 use tokio::{
@@ -34,6 +35,9 @@ struct RpcClientConnectionInner<P>
 where
     P: Packet + Clone + Send + Sync + 'static,
 {
+    // TODO(fh): change to Option, currently for testing.
+    /// The RDMA state for the connection.
+    rdma: UnsafeCell<Rdma>,
     /// The TCP stream for the connection.
     stream: UnsafeCell<TcpStream>,
     /// Options for the timeout of the connection
@@ -76,8 +80,15 @@ where
     P: Packet + Clone + Send + Sync + 'static,
 {
     /// Create a new connection.
-    pub fn new(stream: TcpStream, timeout_options: &ClientTimeoutOptions, client_id: u64) -> Self {
+    pub fn new(
+        stream: TcpStream,
+        timeout_options: &ClientTimeoutOptions,
+        client_id: u64,
+        rdma: Option<Rdma>,
+    ) -> Self {
+        debug_assert!(rdma.is_some(), "testing");
         Self {
+            rdma: UnsafeCell::new(rdma.unwrap()),
             stream: UnsafeCell::new(stream),
             timeout_options: timeout_options.clone(),
             seq: AtomicU64::new(0),
@@ -371,6 +382,17 @@ where
                                     }
                                 }
 
+                                let local_mr = self
+                                    .get_rdma_mut()
+                                    .receive_local_mr()
+                                    .await
+                                    .expect("TODO(fh): handle error");
+                                let data = *local_mr.as_slice();
+                                debug_assert_eq!(
+                                    data, resp_buffer,
+                                    "rdma data is not match with tcp stream data"
+                                );
+
                                 // Fix: add a retry here in case of the task is not ready or failed
                                 // TODO: take a look about take_task is slow
                                 match self.packets_keeper.take_task(header_seq, resp_buffer).await {
@@ -401,6 +423,13 @@ where
     fn get_stream_mut(&self) -> &mut TcpStream {
         // Current implementation is safe because the stream is only accessed by one thread
         unsafe { &mut *self.stream.get() }
+    }
+
+    /// Get rdma state with mutable reference
+    #[allow(clippy::mut_from_ref)]
+    fn get_rdma_mut(&self) -> &mut Rdma {
+        // Current implementation is safe because the stream is only accessed by one thread
+        unsafe { &mut *self.rdma.get() }
     }
 }
 
@@ -435,12 +464,17 @@ where
     /// We don't manage the stream is dead or clean
     /// The client will be closed if the keep alive message is not received in 100 times
     /// When the stream is broken, the client will be closed, and we need to recreate a new client
-    pub fn new(stream: TcpStream, timeout_options: &ClientTimeoutOptions) -> Self {
+    pub fn new(
+        stream: TcpStream,
+        timeout_options: &ClientTimeoutOptions,
+        rdma: Option<Rdma>,
+    ) -> Self {
         let client_id = AtomicU64::new(0);
         let inner_connection = RpcClientConnectionInner::new(
             stream,
             timeout_options,
             client_id.load(std::sync::atomic::Ordering::Acquire),
+            rdma,
         );
 
         Self {
