@@ -1,10 +1,12 @@
 use std::{
+    alloc::Layout,
     cell::UnsafeCell,
     fmt::{self, Debug},
     io::IoSlice,
     sync::Arc,
 };
 
+use async_rdma::{LocalMrReadAccess, Rdma, RdmaListener};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::{
@@ -59,6 +61,8 @@ pub struct RpcServerConnectionInner<T>
 where
     T: RpcServerConnectionHandler + Send + Sync + 'static,
 {
+    /// The RDMA state for the connection
+    rdma: UnsafeCell<Rdma>,
     /// The TCP stream for the connection.
     stream: UnsafeCell<net::TcpStream>,
     /// The worker pool for the connection.
@@ -98,8 +102,11 @@ where
         worker_pool: Arc<WorkerPool>,
         timeout_options: ServerTimeoutOptions,
         dispatch_handler: T,
+        rdma: Option<Rdma>,
     ) -> Self {
+        debug_assert!(rdma.is_some(), "testing");
         Self {
+            rdma: UnsafeCell::new(rdma.unwrap()),
             stream: UnsafeCell::new(stream),
             worker_pool,
             timeout_options,
@@ -234,12 +241,14 @@ where
         worker_pool: Arc<WorkerPool>,
         timeout_options: ServerTimeoutOptions,
         dispatch_handler: T,
+        rdma: Option<Rdma>,
     ) -> Self {
         let inner = Arc::new(RpcServerConnectionInner::new(
             stream,
             worker_pool,
             timeout_options,
             dispatch_handler,
+            rdma,
         ));
         Self { inner }
     }
@@ -273,6 +282,7 @@ where
                 }
             } else if body_len <= HUGE_BODY_LEN {
                 debug!("Request body length is less than 1MB, try to read the request body");
+                debug_assert!(!matches!(req_type, ReqType::KVBlockBatchPutRequest));
                 // Try to read the request body
                 match self.inner.recv_len(body_len).await {
                     Ok(()) => {}
@@ -292,6 +302,27 @@ where
                     .await;
             } else {
                 debug!("Request body length is huge, try to read the request body");
+                {
+                    debug_assert!(matches!(req_type, ReqType::KVBlockBatchPutRequest));
+                    // TODO(fh): to method
+                    let rdma = unsafe { self.inner.rdma.get().as_ref() }.unwrap();
+
+                    let mut local_mr = rdma
+                        .alloc_local_mr(Layout::new::<Vec<u8>>())
+                        .expect("TODO(fh): Handle error");
+
+                    let remote_mr = rdma
+                        .receive_remote_mr()
+                        .await
+                        .expect("TODO(fh): Handle error");
+
+                    rdma.read(&mut local_mr, &remote_mr)
+                        .await
+                        .expect("TODO(fh): Handle error");
+
+                    let data = unsafe { local_mr.as_ptr().cast::<Vec<u8>>().as_ref() }.unwrap();
+                    debug!("Server read local_mr len: {len}", len = data.len());
+                }
                 // Huge body length, need to consider to take user buffer
                 let mut req_buffer = BytesMut::with_capacity(u64_to_usize(body_len));
                 match self.inner.recv_huge_len(body_len, &mut req_buffer).await {
@@ -415,6 +446,8 @@ where
     timeout_options: ServerTimeoutOptions,
     /// Main worker for the server
     main_worker: Option<task::JoinHandle<()>>,
+    /// Rdma worker for the server
+    rdma_worker: Option<task::JoinHandle<()>>,
     /// The worker factory for the RPC connection
     rpc_conn_worker_factory: RpcConnWorkerFactory<T>,
 }
@@ -445,6 +478,7 @@ where
         Self {
             timeout_options: timeout_options.clone(),
             main_worker: None,
+            rdma_worker: None,
             rpc_conn_worker_factory: RpcConnWorkerFactory::<T>::new(
                 max_workers,
                 max_jobs,
@@ -460,6 +494,8 @@ where
             .await
             .map_err(|err| RpcError::InternalError(err.to_string()))?;
         debug!("listening on {:?}", addr.to_owned());
+
+        let (rdma_tx, rdma_rx) = flume::bounded(1);
 
         // Accept incoming connections
         let timeout_options = self.timeout_options.clone();
@@ -478,11 +514,13 @@ where
                                 break;
                             }
                         }
+                        let rdma = rdma_rx.recv_async().await.expect("TODO(fh): handle error");
                         factory.serve(RpcServerConnection::<T>::new(
                             stream,
                             Arc::clone(&factory.worker_pool),
                             conn_timeout_options,
                             factory.get_dispatch_handler(),
+                            Some(rdma),
                         ));
                     }
                     Err(err) => {
@@ -493,6 +531,42 @@ where
             }
         });
 
+        // TODO(fh): remove hardcode
+        let rdma_listen_addr = "127.0.0.1:8899";
+        let rdma_listener = RdmaListener::bind(rdma_listen_addr)
+            .await
+            .expect("TODO(fh): handle error");
+        debug!("rdma listen on {rdma_listen_addr}");
+        let rdma_handle = tokio::task::spawn(async move {
+            /// RDMA device port number
+            const PORT_NUM: u8 = 1;
+            /// RDMA device GID index
+            const GID_INDEX: usize = 1;
+            /// RDMA device max message length (MTU in `ibv_devinfo`?)
+            const MAX_MESSAGE_LENGTH: usize = 1024;
+            loop {
+                let rdma = match rdma_listener
+                    .accept(PORT_NUM, GID_INDEX, MAX_MESSAGE_LENGTH)
+                    .await
+                {
+                    Ok(rdma) => rdma,
+                    Err(err) => {
+                        debug!("Failed to accept RDMA connection: {:?}", err);
+                        continue;
+                    }
+                };
+
+                println!("accepted {rdma:?}");
+                debug!("rdma accepted {rdma:?}");
+
+                rdma_tx
+                    .send_async(rdma)
+                    .await
+                    .expect("TODO(fh): handle error");
+            }
+        });
+        self.rdma_worker = Some(rdma_handle);
+
         self.main_worker = Some(handle);
         Ok(())
     }
@@ -501,6 +575,9 @@ where
     pub fn stop(&mut self) {
         // TODO: Gracefully stop the server?
         if let Some(handle) = self.main_worker.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.rdma_worker.take() {
             handle.abort();
         }
     }
