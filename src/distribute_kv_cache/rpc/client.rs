@@ -1,12 +1,14 @@
 use std::{
+    alloc::Layout,
     cell::UnsafeCell,
     fmt::Debug,
+    io::Write,
     pin::Pin,
     sync::{atomic::AtomicU64, Arc},
     task::{Context, Poll},
 };
 
-use async_rdma::{LocalMrReadAccess, Rdma};
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma};
 use bytes::BytesMut;
 use futures::{pin_mut, Future};
 use tokio::{
@@ -228,6 +230,9 @@ where
         // and do not copy the data
 
         debug!("{:?} Sent data with length: {:?}", self, buf.len());
+        if buf.len() > 16 * 1024 {
+            println!("Sent data {:?}", &buf[..30]);
+        }
         let writer = self.get_stream_mut();
         // Copy from user space to tcp stream
         match write_all_timeout!(writer, buf, self.timeout_options.write_timeout).await {
@@ -296,6 +301,29 @@ where
 
         // concate req_header and req_buffer
         if let Ok(()) = self.send_data(&req_header, Some(&req_packet)).await {
+            if req_len > HUGE_BODY_LEN {
+                debug_assert_eq!(req_packet.op(), ReqType::KVBlockBatchPutRequest.to_u8());
+                let rdma = self.get_rdma_mut();
+
+                const LEN: usize = 16 * 1024 + 100;
+                type Data = [u8; LEN];
+
+                let mut local_mr = rdma
+                    .alloc_local_mr(Layout::new::<Data>())
+                    .expect("TODO(fh): Handle error");
+                // put data into lmr
+                let data = unsafe { self.req_buf.get().as_ref().unwrap().to_vec() };
+                println!("decode data: {:?}", &data[..30]);
+                let len = local_mr
+                    .as_mut_slice()
+                    .write(&data)
+                    .expect("TODO(fh): handle error");
+                println!("write len: {len}");
+                // then send the metadata of this lmr to server to make server aware of this mr.
+                rdma.send_local_mr(local_mr)
+                    .await
+                    .expect("TODO(fh): Handle error");
+            }
             // We have set a copy to keeper and manage the status for the packets keeper
             // Set to packet task with clone
             self.packets_keeper.add_task(req_packet)?;
@@ -693,7 +721,7 @@ mod tests {
         };
         let client_id = 123;
         let connection =
-            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, client_id);
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, client_id, None);
         assert_eq!(connection.client_id, client_id);
     }
 
@@ -715,7 +743,8 @@ mod tests {
             task_timeout: Duration::from_secs(60),
             keep_alive_timeout: Duration::from_secs(30),
         };
-        let connection = RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123);
+        let connection =
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123, None);
         let header = connection.recv_header().await.unwrap();
         assert_eq!(header.seq, 1);
         assert_eq!(header.op, RespType::KeepAliveResponse.to_u8());
@@ -734,7 +763,8 @@ mod tests {
             task_timeout: Duration::from_secs(60),
             keep_alive_timeout: Duration::from_secs(30),
         };
-        let connection = RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123);
+        let connection =
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123, None);
         connection.recv_len(10).await.unwrap();
     }
 
@@ -757,7 +787,8 @@ mod tests {
             task_timeout: Duration::from_secs(60),
             keep_alive_timeout: Duration::from_secs(30),
         };
-        let connection = RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123);
+        let connection =
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123, None);
         let req_header = ReqHeader {
             seq: 1,
             op: ReqType::KeepAliveRequest.to_u8(),
@@ -783,7 +814,7 @@ mod tests {
         };
         let client_id = 123;
         let connection =
-            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, client_id);
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, client_id, None);
         let seq1 = connection.next_seq();
         let seq2 = connection.next_seq();
         assert_eq!(seq1 + 1, seq2);
@@ -807,7 +838,8 @@ mod tests {
             task_timeout: Duration::from_secs(60),
             keep_alive_timeout: Duration::from_secs(30),
         };
-        let connection = RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123);
+        let connection =
+            RpcClientConnectionInner::<TestPacket>::new(stream, &timeout_options, 123, None);
         connection.ping().await.unwrap();
     }
 }

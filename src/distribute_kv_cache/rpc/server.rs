@@ -302,13 +302,24 @@ where
                     .await;
             } else {
                 debug!("Request body length is huge, try to read the request body");
+                // Huge body length, need to consider to take user buffer
+                let mut req_buffer = BytesMut::with_capacity(u64_to_usize(body_len));
+                match self.inner.recv_huge_len(body_len, &mut req_buffer).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        warn!("Failed to receive huge request body: {:?}", err);
+                        return;
+                    }
+                };
+                // RDMA part
                 {
                     debug_assert!(matches!(req_type, ReqType::KVBlockBatchPutRequest));
                     // TODO(fh): to method
                     let rdma = unsafe { self.inner.rdma.get().as_ref() }.unwrap();
 
+                    type Data = [u8; 16 * 1024 + 100];
                     let mut local_mr = rdma
-                        .alloc_local_mr(Layout::new::<Vec<u8>>())
+                        .alloc_local_mr(Layout::new::<Data>())
                         .expect("TODO(fh): Handle error");
 
                     let remote_mr = rdma
@@ -320,18 +331,13 @@ where
                         .await
                         .expect("TODO(fh): Handle error");
 
-                    let data = unsafe { local_mr.as_ptr().cast::<Vec<u8>>().as_ref() }.unwrap();
-                    debug!("Server read local_mr len: {len}", len = data.len());
+                    let data = unsafe { local_mr.as_ptr().cast::<Data>().as_ref() }.unwrap();
+                    debug!(
+                        "Server read local_mr len: {len} data: {data:?}",
+                        len = data.len(),
+                        data = &data[..30],
+                    );
                 }
-                // Huge body length, need to consider to take user buffer
-                let mut req_buffer = BytesMut::with_capacity(u64_to_usize(body_len));
-                match self.inner.recv_huge_len(body_len, &mut req_buffer).await {
-                    Ok(()) => {}
-                    Err(err) => {
-                        warn!("Failed to receive huge request body: {:?}", err);
-                        return;
-                    }
-                };
                 debug!(
                     "Dispatched handler for the connection, seq: {:?}",
                     req_header.seq
@@ -556,8 +562,8 @@ where
                     }
                 };
 
-                println!("accepted {rdma:?}");
-                debug!("rdma accepted {rdma:?}");
+                println!("accepted rdma");
+                debug!("rdma accepted");
 
                 rdma_tx
                     .send_async(rdma)

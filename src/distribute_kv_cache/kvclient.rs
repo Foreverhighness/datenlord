@@ -1034,8 +1034,9 @@ where
             let addr_clone = addr.clone();
             let connect_stream = connect_timeout!(addr_clone, timeout_options.read_timeout).await?;
 
+            const TEST_RDMA_ADDR: &str = "127.0.0.1:8899";
             let rdma = RdmaBuilder::default()
-                .connect(addr.clone())
+                .connect(TEST_RDMA_ADDR)
                 .await
                 .expect(&format!("TODO(fh): handle error, addr: {addr}"));
             println!("connected");
