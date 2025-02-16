@@ -384,6 +384,8 @@ impl Job for KVBlockHandler {
                     if let Ok(block) = block {
                         if let Some(block) = block {
                             let data = block.read().unwrap().get_data();
+
+                            println!("FH: get block data: {data:?}", data = &data[..30]);
                             // let data = block.get_data();
                             if data.len() as u64 == req_body.block_size {
                                 kv_block_get_resp = KVBlockGetResponse {
@@ -474,6 +476,8 @@ impl Job for KVBlockHandler {
                     let mut success_ids = vec![];
                     let mut failed_ids = vec![];
                     for block in req_body.blocks {
+                        println!("FH: put block data: {data:?}", data = &block.data[..30]);
+
                         let block_start = tokio::time::Instant::now();
                         let meta_data = MetaData::new(block.kv_cache_id, 0, 0, 0);
                         let kv_block = Block::new(meta_data, block.data);

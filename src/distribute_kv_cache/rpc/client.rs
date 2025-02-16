@@ -314,10 +314,7 @@ where
                 // put data into lmr
                 let data = unsafe { self.req_buf.get().as_ref().unwrap().to_vec() };
                 println!("decode data: {:?}", &data[..30]);
-                let len = local_mr
-                    .as_mut_slice()
-                    .write(&data)
-                    .expect("TODO(fh): handle error");
+                let len = local_mr.as_mut_slice().write(&data).unwrap();
                 println!("write len: {len}");
                 // then send the metadata of this lmr to server to make server aware of this mr.
                 rdma.send_local_mr(local_mr)

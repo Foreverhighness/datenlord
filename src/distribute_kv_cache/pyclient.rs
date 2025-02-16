@@ -14,7 +14,6 @@ use datenlord::{
     fs::kv_engine::{etcd_impl::EtcdKVEngine, KVEngine, KVEngineType},
     // metrics,
 };
-use rand::Rng;
 use tracing::{debug, info, level_filters::LevelFilter};
 
 #[derive(Debug, Parser)]
@@ -100,12 +99,6 @@ async fn main() -> DatenLordResult<()> {
     }
 
     let start = tokio::time::Instant::now();
-    let mut rng = rand::thread_rng();
-
-    let n = config.block_size;
-
-    let vec: Vec<u8> = (0..n).map(|_| rng.gen_range(0..100)).collect();
-    println!("{:?}", &vec[..4]);
     for _ in 0..config.op_times {
         match config.op_type.as_str() {
             "read" => {
@@ -115,9 +108,18 @@ async fn main() -> DatenLordResult<()> {
             }
             "write" => {
                 let key = vec![1_u32, 2_u32, 3_u32, 4_u32];
-                // let value = vec![0_u8; config.block_size.cast()];
+                let mut value = vec![0_u8; config.block_size.cast()];
+                {
+                    value[0] = 3;
+                    value[1] = 1;
+                    value[2] = 1;
+                    value[3] = 3;
+                    value[4] = 5;
+                    value[5] = 7;
+                }
+
                 kvcacheclient
-                    .insert(key.clone(), vec.clone())
+                    .insert(key.clone(), value.clone())
                     .await
                     .unwrap();
             }

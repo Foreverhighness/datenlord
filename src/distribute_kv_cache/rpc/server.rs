@@ -2,11 +2,11 @@ use std::{
     alloc::Layout,
     cell::UnsafeCell,
     fmt::{self, Debug},
-    io::IoSlice,
+    io::{IoSlice, Write},
     sync::Arc,
 };
 
-use async_rdma::{LocalMrReadAccess, Rdma, RdmaListener};
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaListener};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::{
@@ -191,6 +191,33 @@ where
     /// Send response to the stream
     /// The response is a byte array, contains the response header and body.
     pub async fn send_response(&self, resp: &[u8]) -> Result<(), RpcError> {
+        // TODO(fh): refactor `send_response` to accept `resp: Response`
+        {
+            if resp.len() > 16 * 1024 {
+                println!(
+                    "Server send response len: {len} data: {data:?}",
+                    len = resp.len(),
+                    data = &resp[..100],
+                );
+
+                let rdma = unsafe { &*self.rdma.get() };
+                type Data = [u8; 16 * 1024];
+                let mut local_mr = rdma.alloc_local_mr(Layout::new::<Data>()).unwrap();
+                let mut remote_mr = rdma
+                    .request_remote_mr(Layout::new::<Data>())
+                    .await
+                    .expect("TODO(fh): handle error");
+                local_mr.as_mut_slice().write(resp).unwrap();
+
+                rdma.write(&local_mr, &mut remote_mr)
+                    .await
+                    .expect("TODO(fh): Handle error");
+                rdma.send_remote_mr(remote_mr)
+                    .await
+                    .expect("TODO(fh): handle error");
+            }
+        }
+
         let writer = self.get_stream_mut();
         match write_all_timeout!(writer, resp, self.timeout_options.write_timeout).await {
             Ok(()) => {
