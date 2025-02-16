@@ -301,26 +301,42 @@ where
 
         // concate req_header and req_buffer
         if let Ok(()) = self.send_data(&req_header, Some(&req_packet)).await {
-            if req_len > HUGE_BODY_LEN {
-                debug_assert_eq!(req_packet.op(), ReqType::KVBlockBatchPutRequest.to_u8());
-                let rdma = self.get_rdma_mut();
+            match ReqType::from_u8(req_packet.op()).unwrap() {
+                ReqType::KVBlockGetRequest => {
+                    let rdma = self.get_rdma_mut();
 
-                const LEN: usize = 16 * 1024 + 100;
-                type Data = [u8; LEN];
+                    // then send the metadata of this lmr to server to make server aware of this mr.
+                    let local_mr = rdma
+                        .receive_local_mr()
+                        .await
+                        .expect("TODO(fh): Handle error");
 
-                let mut local_mr = rdma
-                    .alloc_local_mr(Layout::new::<Data>())
-                    .expect("TODO(fh): Handle error");
-                // put data into lmr
-                let data = unsafe { self.req_buf.get().as_ref().unwrap().to_vec() };
-                println!("decode data: {:?}", &data[..30]);
-                let len = local_mr.as_mut_slice().write(&data).unwrap();
-                println!("write len: {len}");
-                // then send the metadata of this lmr to server to make server aware of this mr.
-                rdma.send_local_mr(local_mr)
-                    .await
-                    .expect("TODO(fh): Handle error");
+                    let data = local_mr.as_slice();
+                    println!("client receive data: {data:?}", data = &data[..32],);
+                }
+                ReqType::KVBlockBatchPutRequest => {
+                    let rdma = self.get_rdma_mut();
+
+                    const LEN: usize = 16 * 1024;
+                    type Data = [u8; LEN];
+
+                    let mut local_mr = rdma
+                        .alloc_local_mr(Layout::new::<Data>())
+                        .expect("TODO(fh): Handle error");
+                    // put data into lmr
+                    let data = unsafe { self.req_buf.get().as_ref().unwrap().to_vec() };
+                    println!("decode data: {:?}", &data[..100]);
+                    let len = local_mr.as_mut_slice().write(&data).unwrap();
+                    println!("write len: {len}");
+                    // then send the metadata of this lmr to server to make server aware of this mr.
+                    rdma.send_local_mr(local_mr)
+                        .await
+                        .expect("TODO(fh): Handle error");
+                    println!("send local mr success");
+                }
+                _ => (),
             }
+
             // We have set a copy to keeper and manage the status for the packets keeper
             // Set to packet task with clone
             self.packets_keeper.add_task(req_packet)?;
@@ -406,17 +422,6 @@ where
                                         break;
                                     }
                                 }
-
-                                let local_mr = self
-                                    .get_rdma_mut()
-                                    .receive_local_mr()
-                                    .await
-                                    .expect("TODO(fh): handle error");
-                                let data = *local_mr.as_slice();
-                                debug_assert_eq!(
-                                    data, resp_buffer,
-                                    "rdma data is not match with tcp stream data"
-                                );
 
                                 // Fix: add a retry here in case of the task is not ready or failed
                                 // TODO: take a look about take_task is slow

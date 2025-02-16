@@ -193,16 +193,21 @@ where
     pub async fn send_response(&self, resp: &[u8]) -> Result<(), RpcError> {
         // TODO(fh): refactor `send_response` to accept `resp: Response`
         {
-            if resp.len() > 16 * 1024 {
+            let is_body = resp.len() > 16 * 1024;
+            if is_body {
                 println!(
-                    "Server send response len: {len} data: {data:?}",
+                    "Server send get response len: {len} data: {data:?}",
                     len = resp.len(),
-                    data = &resp[..100],
+                    data = &resp[..34],
                 );
 
                 let rdma = unsafe { &*self.rdma.get() };
-                type Data = [u8; 16 * 1024];
-                let mut local_mr = rdma.alloc_local_mr(Layout::new::<Data>()).unwrap();
+
+                const LEN: usize = 16 * 1024;
+                type Data = [u8; LEN];
+                let mut local_mr = rdma
+                    .alloc_local_mr(Layout::new::<Data>())
+                    .expect("TODO(fh): Handle error");
                 let mut remote_mr = rdma
                     .request_remote_mr(Layout::new::<Data>())
                     .await
@@ -215,6 +220,44 @@ where
                 rdma.send_remote_mr(remote_mr)
                     .await
                     .expect("TODO(fh): handle error");
+
+                println!("send remote mr success");
+            } else {
+                let op = resp[8];
+                match RespType::from_u8(op).unwrap() {
+                    RespType::KVBlockBatchPutResponse => {
+                        println!(
+                            "Server send put response len: {len} data: {data:?}",
+                            len = resp.len(),
+                            data = &resp[..34],
+                        );
+
+                        let rdma = unsafe { self.rdma.get().as_ref() }.unwrap();
+
+                        const LEN: usize = 16 * 1024;
+                        type Data = [u8; LEN];
+                        let mut local_mr = rdma
+                            .alloc_local_mr(Layout::new::<Data>())
+                            .expect("TODO(fh): Handle error");
+                        let remote_mr = rdma
+                            .receive_remote_mr()
+                            .await
+                            .expect("TODO(fh): handle error");
+
+                        rdma.read(&mut local_mr, &remote_mr)
+                            .await
+                            .expect("TODO(fh): Handle error");
+                        let data = local_mr.as_slice();
+
+                        debug!("Server read local_mr len: {len}", len = data.len());
+                        println!(
+                            "read data: {header:?} body: {body:?}",
+                            header = &data[..41],
+                            body = &data[41..50],
+                        );
+                    }
+                    _ => (),
+                }
             }
         }
 
@@ -338,33 +381,6 @@ where
                         return;
                     }
                 };
-                // RDMA part
-                {
-                    debug_assert!(matches!(req_type, ReqType::KVBlockBatchPutRequest));
-                    // TODO(fh): to method
-                    let rdma = unsafe { self.inner.rdma.get().as_ref() }.unwrap();
-
-                    type Data = [u8; 16 * 1024 + 100];
-                    let mut local_mr = rdma
-                        .alloc_local_mr(Layout::new::<Data>())
-                        .expect("TODO(fh): Handle error");
-
-                    let remote_mr = rdma
-                        .receive_remote_mr()
-                        .await
-                        .expect("TODO(fh): Handle error");
-
-                    rdma.read(&mut local_mr, &remote_mr)
-                        .await
-                        .expect("TODO(fh): Handle error");
-
-                    let data = unsafe { local_mr.as_ptr().cast::<Data>().as_ref() }.unwrap();
-                    debug!(
-                        "Server read local_mr len: {len} data: {data:?}",
-                        len = data.len(),
-                        data = &data[..30],
-                    );
-                }
                 debug!(
                     "Dispatched handler for the connection, seq: {:?}",
                     req_header.seq
