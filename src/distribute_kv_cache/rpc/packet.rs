@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
+use async_rdma::MrToken;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use tokio::{sync::Mutex, time::Instant};
@@ -167,6 +168,13 @@ pub trait Packet: Sync + Send + Clone + Debug + Encode {
     /// Set the packet result, and we will send the response buffer to caller, caller and directly decode this buffer
     /// The buffer is different in req and resp, so we can not hold one buffer in packet
     async fn set_result(self, status: Result<(), RpcError>);
+
+    /// Get MrToken
+    ///
+    /// If this packet do not need to transfer by rdma, return None
+    fn get_mr_token(&self) -> Option<MrToken> {
+        None
+    }
 }
 /// The `PacketsInner` struct is used to store the current tasks.
 #[derive(Debug)]

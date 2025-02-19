@@ -21,6 +21,9 @@ pub mod workerpool;
 /// The packet module contains the packet encoding and decoding functions for the cache service.
 pub mod packet;
 
+/// The rdma module contains the RDMA connection implementation for the cache service.
+pub mod rdma;
+
 /// The utils module contains the utility functions for the cache service.
 #[macro_use]
 pub mod utils;

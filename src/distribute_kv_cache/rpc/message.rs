@@ -43,6 +43,7 @@ where
 
     std::mem::forget(input);
 
+    // FIXME(UB): ptr should be aligned to K
     unsafe { Vec::from_raw_parts(ptr as *mut K, len, capacity) }
 }
 
@@ -90,6 +91,11 @@ pub enum ReqType {
     KVBlockGetRequest,
     /// The kv block put request 7.
     KVBlockBatchPutRequest,
+
+    /// The kv block get request 6 + 64 = 70.
+    KVBlockGetRequestWithRdma,
+    /// The kv block put request 7 + 64 = 71.
+    KVBlockBatchPutRequestWithRdma,
 }
 
 impl ReqType {
@@ -104,6 +110,9 @@ impl ReqType {
             5 => Ok(Self::KVCacheIndexRemoveRequest),
             6 => Ok(Self::KVBlockGetRequest),
             7 => Ok(Self::KVBlockBatchPutRequest),
+
+            70 => Ok(Self::KVBlockGetRequestWithRdma),
+            71 => Ok(Self::KVBlockBatchPutRequestWithRdma),
             _ => Err(RpcError::InternalError(format!(
                 "Invalid operation type: {op}"
             ))),
@@ -122,6 +131,9 @@ impl ReqType {
             Self::KVCacheIndexRemoveRequest => 5,
             Self::KVBlockGetRequest => 6,
             Self::KVBlockBatchPutRequest => 7,
+
+            Self::KVBlockGetRequestWithRdma => 70,
+            Self::KVBlockBatchPutRequestWithRdma => 71,
         }
     }
 }
@@ -145,6 +157,11 @@ pub enum RespType {
     KVBlockGetResponse,
     /// The kv block put response.
     KVBlockBatchPutResponse,
+
+    /// The kv block get request 6 + 64 = 70.
+    KVBlockGetResponseWithRdma,
+    /// The kv block put request 7 + 64 = 71.
+    KVBlockBatchPutResponseWithRdma,
 }
 
 impl RespType {
@@ -159,6 +176,9 @@ impl RespType {
             5 => Ok(Self::KVCacheIndexRemoveResponse),
             6 => Ok(Self::KVBlockGetResponse),
             7 => Ok(Self::KVBlockBatchPutResponse),
+
+            70 => Ok(Self::KVBlockGetResponseWithRdma),
+            71 => Ok(Self::KVBlockBatchPutResponseWithRdma),
             _ => Err(RpcError::InternalError(format!(
                 "Invalid operation type: {op}"
             ))),
@@ -177,6 +197,9 @@ impl RespType {
             Self::KVCacheIndexRemoveResponse => 5,
             Self::KVBlockGetResponse => 6,
             Self::KVBlockBatchPutResponse => 7,
+
+            Self::KVBlockGetResponseWithRdma => 70,
+            Self::KVBlockBatchPutResponseWithRdma => 71,
         }
     }
 }

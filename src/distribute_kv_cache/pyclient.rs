@@ -110,12 +110,12 @@ async fn main() -> DatenLordResult<()> {
                 let key = vec![1_u32, 2_u32, 3_u32, 4_u32];
                 let mut value = vec![0_u8; config.block_size.cast()];
                 {
-                    value[0] = 3;
-                    value[1] = 1;
-                    value[2] = 1;
-                    value[3] = 3;
+                    value[0] = 1;
+                    value[1] = 2;
+                    value[2] = 3;
+                    value[3] = 4;
                     value[4] = 5;
-                    value[5] = 7;
+                    value[5] = 6;
                 }
 
                 kvcacheclient
