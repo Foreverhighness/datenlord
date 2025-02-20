@@ -10,7 +10,7 @@ use crate::distribute_kv_cache::rpc::message::StatusCode;
 use crate::distribute_kv_cache::rpc::packet::{ActualSize, Decode, Encode};
 
 /// The request to get kv block, by using RDMA.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KVBlockGetRequestWithRdma {
     /// The kv block size.
     pub block_size: u64,
@@ -56,7 +56,7 @@ impl ActualSize for KVBlockGetRequestWithRdma {
 }
 
 /// The response to get kv block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KVBlockGetResponseWithRdma {
     /// The kv block size.
     pub block_size: u64,

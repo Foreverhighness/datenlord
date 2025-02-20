@@ -12,7 +12,7 @@ use crate::distribute_kv_cache::rpc::utils::u64_to_usize;
 use super::KVBlockPutRequestWithRdma;
 
 /// The request to put multiple kv blocks.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KVBlockBatchPutRequestWithRdma {
     /// A list of mr tokens.
     pub put_requests: Vec<KVBlockPutRequestWithRdma>,
@@ -56,7 +56,7 @@ impl ActualSize for KVBlockBatchPutRequestWithRdma {
 }
 
 /// The response to put multiple kv blocks.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KVBlockBatchPutResponseWithRdma {
     /// The response to put kv blocks.
     pub batch_put_response: KVBlockBatchPutResponse,

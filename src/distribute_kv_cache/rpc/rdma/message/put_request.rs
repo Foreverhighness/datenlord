@@ -9,7 +9,7 @@ use crate::distribute_kv_cache::rpc::error::RpcError;
 use crate::distribute_kv_cache::rpc::packet::{ActualSize, Decode, Encode};
 
 /// The request to put a single kv block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KVBlockPutRequestWithRdma {
     /// The kv block size.
     pub block_size: u64,

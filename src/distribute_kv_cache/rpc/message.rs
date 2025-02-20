@@ -10,6 +10,10 @@ use crate::async_fuse::util::usize_to_u64;
 use super::{
     error::RpcError,
     packet::{ActualSize, Decode, Encode, Packet},
+    rdma::message::{
+        KVBlockBatchPutRequestWithRdma, KVBlockBatchPutResponseWithRdma, KVBlockGetRequestWithRdma,
+        KVBlockGetResponseWithRdma,
+    },
     utils::{get_u64_from_buf, u64_to_usize},
 };
 
@@ -1541,6 +1545,11 @@ pub enum KVCacheRequest<K> {
     KVBlockGetRequest(KVBlockGetRequest),
     /// The request to put kv block.
     KVBlockBatchPutRequest(KVBlockBatchPutRequest),
+
+    /// The request to get kv block with rdma.
+    KVBlockGetRequestWithRdma(KVBlockGetRequestWithRdma),
+    /// The request to put multiple kv blocks with rdma.
+    KVBlockBatchPutRequestWithRdma(KVBlockBatchPutRequestWithRdma),
 }
 
 impl<K> Encode for KVCacheRequest<K>
@@ -1556,6 +1565,9 @@ where
             Self::KVCacheIndexRemoveRequest(request) => request.encode(buf),
             Self::KVBlockGetRequest(request) => request.encode(buf),
             Self::KVBlockBatchPutRequest(request) => request.encode(buf),
+
+            Self::KVBlockGetRequestWithRdma(request) => request.encode(buf),
+            Self::KVBlockBatchPutRequestWithRdma(request) => request.encode(buf),
         }
     }
 }
@@ -1573,6 +1585,9 @@ where
             Self::KVCacheIndexRemoveRequest(request) => request.actual_size(),
             Self::KVBlockGetRequest(request) => request.actual_size(),
             Self::KVBlockBatchPutRequest(request) => request.actual_size(),
+
+            Self::KVBlockGetRequestWithRdma(request) => request.actual_size(),
+            Self::KVBlockBatchPutRequestWithRdma(request) => request.actual_size(),
         }
     }
 }
@@ -1614,6 +1629,14 @@ where
                 let request = KVBlockBatchPutRequest::decode(buf)?;
                 Ok(Self::KVBlockBatchPutRequest(request))
             }
+            ReqType::KVBlockGetRequestWithRdma => {
+                let request = KVBlockGetRequestWithRdma::decode(buf)?;
+                Ok(Self::KVBlockGetRequestWithRdma(request))
+            }
+            ReqType::KVBlockBatchPutRequestWithRdma => {
+                let request = KVBlockBatchPutRequestWithRdma::decode(buf)?;
+                Ok(Self::KVBlockBatchPutRequestWithRdma(request))
+            }
             _ => Err(RpcError::InternalError("Invalid request type".to_owned())),
         }
     }
@@ -1634,6 +1657,11 @@ pub enum KVCacheResponse {
     KVBlockGetResponse(KVBlockGetResponse),
     /// The response to put multiple kv blocks.
     KVBlockBatchPutResponse(KVBlockBatchPutResponse),
+
+    /// The response to get kv block with rdma.
+    KVBlockGetResponseWithRdma(KVBlockGetResponseWithRdma),
+    /// The response to put multiple kv blocks with rdma.
+    KVBlockBatchPutResponseWithRdma(KVBlockBatchPutResponseWithRdma),
 }
 
 impl Encode for KVCacheResponse {
@@ -1646,6 +1674,9 @@ impl Encode for KVCacheResponse {
             Self::KVCacheIndexRemoveResponse(response) => response.encode(buf),
             Self::KVBlockGetResponse(response) => response.encode(buf),
             Self::KVBlockBatchPutResponse(response) => response.encode(buf),
+
+            Self::KVBlockGetResponseWithRdma(response) => response.encode(buf),
+            Self::KVBlockBatchPutResponseWithRdma(response) => response.encode(buf),
         }
     }
 }
@@ -1680,6 +1711,15 @@ impl KVCacheResponse {
             RespType::KVBlockBatchPutResponse => {
                 let response = KVBlockBatchPutResponse::decode(&mut buf)?;
                 Ok(Self::KVBlockBatchPutResponse(response))
+            }
+
+            RespType::KVBlockGetResponseWithRdma => {
+                let response = KVBlockGetResponseWithRdma::decode_large_data(buf.freeze())?;
+                Ok(Self::KVBlockGetResponseWithRdma(response))
+            }
+            RespType::KVBlockBatchPutResponseWithRdma => {
+                let response = KVBlockBatchPutResponseWithRdma::decode(&mut buf)?;
+                Ok(Self::KVBlockBatchPutResponseWithRdma(response))
             }
             _ => Err(RpcError::InternalError("Invalid response type".to_owned())),
         }
