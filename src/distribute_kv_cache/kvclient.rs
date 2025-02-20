@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use async_rdma::RdmaBuilder;
+use async_rdma::Rdma;
 use clippy_utilities::Cast;
 use radix_trie::Trie;
 use tokio::sync::Mutex;
@@ -239,8 +239,8 @@ where
 {
     /// Create a new distribute cache client
     #[must_use]
-    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
-        let inner = DistributeKVCacheClientInner::new(cluster_manager, block_size);
+    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64, rdma: Option<Rdma>) -> Self {
+        let inner = DistributeKVCacheClientInner::new(cluster_manager, block_size, rdma);
         Self {
             inner,
             block_cache: Arc::new(Mutex::new(LocalBlockCache::new(block_size))),
@@ -608,6 +608,8 @@ where
     rpc_client_cache: Arc<Mutex<HashMap<String, Arc<RpcClient<KVCachePacket<K>>>>>>,
     /// Block size
     block_size: u64,
+    /// RDMA client
+    rdma: Option<Arc<Mutex<Rdma>>>,
 }
 
 impl<K> DistributeKVCacheClientInner<K>
@@ -616,12 +618,13 @@ where
 {
     /// Create a new distribute cache client
     #[must_use]
-    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
+    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64, rdma: Option<Rdma>) -> Self {
         let rpc_client_cache = Arc::new(Mutex::new(HashMap::new()));
         Self {
             cluster_manager,
             rpc_client_cache,
             block_size,
+            rdma: rdma.map(|rdma| Arc::new(Mutex::new(rdma))),
         }
     }
 
@@ -1032,17 +1035,24 @@ where
                 keep_alive_timeout: Duration::from_secs(10),
             };
             let addr_clone = addr.clone();
-            let connect_stream = connect_timeout!(addr_clone, timeout_options.read_timeout).await?;
+            let mut connect_stream =
+                connect_timeout!(addr_clone, timeout_options.read_timeout).await?;
 
-            const TEST_RDMA_ADDR: &str = "127.0.0.1:8899";
-            let rdma = RdmaBuilder::default()
-                .connect(TEST_RDMA_ADDR)
-                .await
-                .expect(&format!("TODO(fh): handle error, addr: {addr}"));
-            println!("connected");
+            let rdma = if let Some(rdma) = self.rdma.as_ref() {
+                let mut rdma = rdma.lock().await;
+                let rdma = rdma
+                    .transmit_metadata_by_stream(&mut connect_stream)
+                    .await?;
+                debug!("RDMA: Client connect to server {addr}");
+                println!("rdma clinet connected!");
+
+                Some(rdma)
+            } else {
+                None
+            };
 
             let rpc_client =
-                RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options, Some(rdma));
+                RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options, rdma);
             rpc_client.start_recv();
 
             // TODO: add ping into a loop.
@@ -1168,7 +1178,7 @@ mod tests {
         let index_manager = Arc::new(IndexManager::<u32>::new());
         let pool = Arc::new(WorkerPool::new(5, 5));
         let handler = KVCacheHandler::new(Arc::clone(&pool), cache_manager, index_manager);
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler, None);
         server.listen(&addr).await.unwrap();
 
         let etcd_endpoint = "localhost:2379";
@@ -1180,6 +1190,7 @@ mod tests {
         let distribute_kvcache_client_inner = DistributeKVCacheClientInner::<u32>::new(
             Arc::new(ClusterManager::new(client, node)),
             64,
+            None,
         );
 
         let res = distribute_kvcache_client_inner.get_client(addr).await;

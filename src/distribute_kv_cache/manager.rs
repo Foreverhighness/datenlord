@@ -1,5 +1,6 @@
 use std::{fmt, sync::Arc};
 
+use async_rdma::RdmaBuilder;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use clippy_utilities::Cast;
@@ -1087,6 +1088,18 @@ where
             self.config.rpc_server_ip, self.config.rpc_server_port
         );
 
+        // 3. Create RDMA structure
+        let rdma = match RdmaBuilder::default().build() {
+            Ok(rdma) => {
+                debug!("RDMA structure created");
+                Some(rdma)
+            }
+            Err(err) => {
+                error!("RDMA init failed: {err:?}");
+                None
+            }
+        };
+
         let cache_manager_clone = Arc::clone(&self.cache_manager);
         let index_manager_clone = Arc::clone(&self.index_manager);
         TASK_MANAGER
@@ -1102,7 +1115,8 @@ where
                 );
                 let server_timeout_options = ServerTimeoutOptions::default();
                 // Create a new rpc server with max 100 workers and 1000 jobs
-                let mut rpc_server = RpcServer::new(&server_timeout_options, 64, 1000, handler);
+                let mut rpc_server =
+                    RpcServer::new(&server_timeout_options, 64, 1000, handler, rdma);
                 match rpc_server.listen(&addr).await {
                     Ok(()) => {
                         info!("Rpc server started on: {}", addr);

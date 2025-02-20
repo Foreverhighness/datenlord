@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
+use async_rdma::RdmaBuilder;
 use clap::Parser;
 use datenlord::{
     common::{
@@ -108,9 +109,20 @@ async fn main() -> DatenLordResult<()> {
     let cache_manager = Arc::new(KVBlockManager::default());
     let index_manager = Arc::new(IndexManager::<u32>::new());
 
+    let rdma = match RdmaBuilder::default().build() {
+        Ok(rdma) => {
+            println!("RDMA created successfully");
+            Some(rdma)
+        }
+        Err(e) => {
+            println!("failed to init rdma: {e:?}");
+            None
+        }
+    };
+
     let pool = Arc::new(WorkerPool::new(5, 5));
     let handler = KVCacheHandler::new(Arc::clone(&pool), cache_manager, index_manager);
-    let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler);
+    let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler, rdma);
     match server.listen(&addr).await {
         Ok(()) => {
             info!("KV cache server started successfully");

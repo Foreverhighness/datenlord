@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaListener};
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::{
@@ -496,7 +496,7 @@ where
     /// Main worker for the server
     main_worker: Option<task::JoinHandle<()>>,
     /// Rdma worker for the server
-    rdma_worker: Option<task::JoinHandle<()>>,
+    rdma: Option<Rdma>,
     /// The worker factory for the RPC connection
     rpc_conn_worker_factory: RpcConnWorkerFactory<T>,
 }
@@ -523,11 +523,12 @@ where
         max_workers: usize,
         max_jobs: usize,
         dispatch_handler: T,
+        rdma: Option<Rdma>,
     ) -> Self {
         Self {
             timeout_options: timeout_options.clone(),
             main_worker: None,
-            rdma_worker: None,
+            rdma,
             rpc_conn_worker_factory: RpcConnWorkerFactory::<T>::new(
                 max_workers,
                 max_jobs,
@@ -544,32 +545,44 @@ where
             .map_err(|err| RpcError::InternalError(err.to_string()))?;
         debug!("listening on {:?}", addr.to_owned());
 
-        let (rdma_tx, rdma_rx) = flume::bounded(1);
-
         // Accept incoming connections
         let timeout_options = self.timeout_options.clone();
         let factory = self.rpc_conn_worker_factory.clone();
+        let mut rdma = self.rdma.take();
         let handle = tokio::task::spawn(async move {
             loop {
                 let conn_timeout_options = timeout_options.clone();
                 match listener.accept().await {
-                    Ok((stream, _)) => {
-                        match stream.peer_addr() {
-                            Ok(addr) => {
-                                debug!("Accepted connection from {:?}", addr);
-                            }
+                    Ok((mut stream, _)) => {
+                        let addr = match stream.peer_addr() {
+                            Ok(addr) => addr,
                             Err(err) => {
                                 debug!("Failed to get peer address: {:?}", err);
                                 break;
                             }
-                        }
-                        let rdma = rdma_rx.recv_async().await.expect("TODO(fh): handle error");
+                        };
+                        debug!("Accepted connection from {:?}", addr);
+                        let rdma = if let Some(rdma) = rdma.as_mut() {
+                            let rdma = match rdma.receive_metadata_by_stream(&mut stream).await {
+                                Ok(rdma) => rdma,
+                                Err(err) => {
+                                    debug!("Failed to receive metadata from client {addr:?}, err: {err:?}");
+                                    break;
+                                }
+                            };
+                            debug!("RDMA: Server connect to client {addr:?}",);
+                            println!("rdma server connected!");
+
+                            Some(rdma)
+                        } else {
+                            None
+                        };
                         factory.serve(RpcServerConnection::<T>::new(
                             stream,
                             Arc::clone(&factory.worker_pool),
                             conn_timeout_options,
                             factory.get_dispatch_handler(),
-                            Some(rdma),
+                            rdma,
                         ));
                     }
                     Err(err) => {
@@ -580,42 +593,6 @@ where
             }
         });
 
-        // TODO(fh): remove hardcode
-        let rdma_listen_addr = "127.0.0.1:8899";
-        let rdma_listener = RdmaListener::bind(rdma_listen_addr)
-            .await
-            .expect("TODO(fh): handle error");
-        debug!("rdma listen on {rdma_listen_addr}");
-        let rdma_handle = tokio::task::spawn(async move {
-            /// RDMA device port number
-            const PORT_NUM: u8 = 1;
-            /// RDMA device GID index
-            const GID_INDEX: usize = 1;
-            /// RDMA device max message length (MTU in `ibv_devinfo`?)
-            const MAX_MESSAGE_LENGTH: usize = 1024;
-            loop {
-                let rdma = match rdma_listener
-                    .accept(PORT_NUM, GID_INDEX, MAX_MESSAGE_LENGTH)
-                    .await
-                {
-                    Ok(rdma) => rdma,
-                    Err(err) => {
-                        debug!("Failed to accept RDMA connection: {:?}", err);
-                        continue;
-                    }
-                };
-
-                println!("accepted rdma");
-                debug!("rdma accepted");
-
-                rdma_tx
-                    .send_async(rdma)
-                    .await
-                    .expect("TODO(fh): handle error");
-            }
-        });
-        self.rdma_worker = Some(rdma_handle);
-
         self.main_worker = Some(handle);
         Ok(())
     }
@@ -624,9 +601,6 @@ where
     pub fn stop(&mut self) {
         // TODO: Gracefully stop the server?
         if let Some(handle) = self.main_worker.take() {
-            handle.abort();
-        }
-        if let Some(handle) = self.rdma_worker.take() {
             handle.abort();
         }
     }
@@ -680,7 +654,7 @@ mod tests {
     async fn test_rpc_server() {
         let addr = "127.0.0.1:2888";
         let handler = TestHandler::new();
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler, None);
         server.listen(addr).await.unwrap();
         time::sleep(Duration::from_secs(1)).await;
         assert!(is_port_in_use(addr).await);
