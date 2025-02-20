@@ -1,14 +1,12 @@
 use std::{
-    alloc::Layout,
     cell::UnsafeCell,
     fmt::Debug,
-    io::Write,
     pin::Pin,
     sync::{atomic::AtomicU64, Arc},
     task::{Context, Poll},
 };
 
-use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma};
+use async_rdma::Rdma;
 use bytes::BytesMut;
 use futures::{pin_mut, Future};
 use tokio::{
@@ -37,9 +35,6 @@ struct RpcClientConnectionInner<P>
 where
     P: Packet + Clone + Send + Sync + 'static,
 {
-    // TODO(fh): change to Option, currently for testing.
-    /// The RDMA state for the connection.
-    rdma: UnsafeCell<Rdma>,
     /// The TCP stream for the connection.
     stream: UnsafeCell<TcpStream>,
     /// Options for the timeout of the connection
@@ -63,6 +58,9 @@ where
     req_buf: UnsafeCell<BytesMut>,
     /// The Client ID for the connection
     client_id: u64,
+
+    /// The RDMA state for the connection.
+    rdma: Option<Rdma>,
 }
 
 // TODO: Add markable id for this client
@@ -90,7 +88,6 @@ where
     ) -> Self {
         debug_assert!(rdma.is_some(), "testing");
         Self {
-            rdma: UnsafeCell::new(rdma.unwrap()),
             stream: UnsafeCell::new(stream),
             timeout_options: timeout_options.clone(),
             seq: AtomicU64::new(0),
@@ -101,6 +98,8 @@ where
             resp_buf: UnsafeCell::new(BytesMut::with_capacity(16 * 1024 * 1024)),
             req_buf: UnsafeCell::new(BytesMut::with_capacity(16 * 1024 * 1024)),
             client_id,
+
+            rdma,
         }
     }
 
@@ -301,42 +300,6 @@ where
 
         // concate req_header and req_buffer
         if let Ok(()) = self.send_data(&req_header, Some(&req_packet)).await {
-            match ReqType::from_u8(req_packet.op()).unwrap() {
-                ReqType::KVBlockGetRequest => {
-                    let rdma = self.get_rdma_mut();
-
-                    // then send the metadata of this lmr to server to make server aware of this mr.
-                    let local_mr = rdma
-                        .receive_local_mr()
-                        .await
-                        .expect("TODO(fh): Handle error");
-
-                    let data = local_mr.as_slice();
-                    println!("client receive data: {data:?}", data = &data[..32],);
-                }
-                ReqType::KVBlockBatchPutRequest => {
-                    let rdma = self.get_rdma_mut();
-
-                    const LEN: usize = 16 * 1024;
-                    type Data = [u8; LEN];
-
-                    let mut local_mr = rdma
-                        .alloc_local_mr(Layout::new::<Data>())
-                        .expect("TODO(fh): Handle error");
-                    // put data into lmr
-                    let data = unsafe { self.req_buf.get().as_ref().unwrap().to_vec() };
-                    println!("decode data: {:?}", &data[..100]);
-                    let len = local_mr.as_mut_slice().write(&data).unwrap();
-                    println!("write len: {len}");
-                    // then send the metadata of this lmr to server to make server aware of this mr.
-                    rdma.send_local_mr(local_mr)
-                        .await
-                        .expect("TODO(fh): Handle error");
-                    println!("send local mr success");
-                }
-                _ => (),
-            }
-
             // We have set a copy to keeper and manage the status for the packets keeper
             // Set to packet task with clone
             self.packets_keeper.add_task(req_packet)?;
@@ -455,11 +418,9 @@ where
         unsafe { &mut *self.stream.get() }
     }
 
-    /// Get rdma state with mutable reference
-    #[allow(clippy::mut_from_ref)]
-    fn get_rdma_mut(&self) -> &mut Rdma {
-        // Current implementation is safe because the stream is only accessed by one thread
-        unsafe { &mut *self.rdma.get() }
+    /// Get rdma state
+    fn get_rdma(&self) -> Option<&Rdma> {
+        self.rdma.as_ref()
     }
 }
 
@@ -540,6 +501,11 @@ where
     /// WARN: this function does not support concurrent call
     pub async fn ping(&self) -> Result<(), RpcError> {
         self.inner_connection.ping().await
+    }
+
+    /// Get the RDMA client
+    pub(crate) fn get_rdma(&self) -> Option<&Rdma> {
+        self.inner_connection.get_rdma()
     }
 }
 

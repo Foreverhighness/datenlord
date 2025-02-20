@@ -1,7 +1,7 @@
-use core::fmt;
+use core::{alloc::Layout, fmt};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use async_rdma::Rdma;
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, MrAccess, Rdma};
 use clippy_utilities::Cast;
 use radix_trie::Trie;
 use tokio::sync::Mutex;
@@ -14,7 +14,10 @@ use crate::{
         task_manager::{TaskName, TASK_MANAGER},
     },
     connect_timeout,
-    distribute_kv_cache::rpc::message,
+    distribute_kv_cache::rpc::{
+        message,
+        rdma::message::{KVBlockBatchPutRequestWithRdma, KVBlockPutRequestWithRdma},
+    },
 };
 
 use super::{
@@ -962,23 +965,74 @@ where
         debug!("kv_blocks.into_iter() check Time cost: {:?}", start_1);
 
         let (tx, rx) = flume::unbounded::<Result<KVCacheResponse, KVCacheRequest<K>>>();
-        let kv_cache_batch_put_request =
-            KVCacheRequest::KVBlockBatchPutRequest(KVBlockBatchPutRequest {
-                batch_size: kv_block_put_requests.len() as u64,
-                blocks: kv_block_put_requests,
-            });
-        let packet = KVCachePacket::new(
-            ReqType::KVBlockBatchPutRequest.to_u8(),
-            kv_cache_batch_put_request,
-            tx.clone(),
-        );
+
+        let rpc_client = self.get_client(addr.clone()).await?;
+
+        let done_tx = tx.clone();
+        let packet = if let Some(rdma) = rpc_client.get_rdma() {
+            let mut put_requests = Vec::with_capacity(kv_block_put_requests.len());
+
+            for KVBlockPutRequest {
+                block_size,
+                kv_cache_id,
+                data,
+            } in kv_block_put_requests
+            {
+                debug_assert_eq!(data.len(), u64_to_usize(block_size));
+                let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
+                // Safety: Immediate initialization
+                let mut local_mr =
+                    unsafe { rdma.alloc_local_mr_uninit(layout) }.map_err(|err| {
+                        DatenLordError::DistributeCacheManagerErr {
+                            context: vec![format!("Failed to alloc local mr: {:?}", err)],
+                        }
+                    })?;
+                println!("client put block alloc local mr success");
+                debug_assert_eq!(local_mr.length(), data.len());
+
+                local_mr.as_mut_slice().copy_from_slice(&data);
+                println!(
+                    "client put block set local mr: {data:?}",
+                    data = &local_mr.as_slice()[..32]
+                );
+                let mr_token = local_mr.token_with_timeout(Duration::default()).unwrap();
+                println!("client put block mr_token: {mr_token:?}");
+
+                put_requests.push(KVBlockPutRequestWithRdma {
+                    block_size,
+                    kv_cache_id,
+                    mr_token,
+                });
+            }
+
+            let kv_cache_batch_put_request_with_rdma =
+                KVCacheRequest::KVBlockBatchPutRequestWithRdma(KVBlockBatchPutRequestWithRdma {
+                    put_requests,
+                });
+            KVCachePacket::new(
+                ReqType::KVBlockBatchPutRequestWithRdma.to_u8(),
+                kv_cache_batch_put_request_with_rdma,
+                done_tx,
+            )
+        } else {
+            let kv_cache_batch_put_request =
+                KVCacheRequest::KVBlockBatchPutRequest(KVBlockBatchPutRequest {
+                    batch_size: kv_block_put_requests.len() as u64,
+                    blocks: kv_block_put_requests,
+                });
+            KVCachePacket::new(
+                ReqType::KVBlockBatchPutRequest.to_u8(),
+                kv_cache_batch_put_request,
+                done_tx,
+            )
+        };
+
         let start_2 = start.elapsed();
         debug!(
             "KVCachePacket::new check Time cost: {:?}",
             start_2 - start_1
         );
 
-        let rpc_client = self.get_client(addr.clone()).await?;
         rpc_client.send_request(packet).await.map_err(|err| {
             DatenLordError::DistributeCacheManagerErr {
                 context: vec![format!("Failed to send request: {:?}", err)],
