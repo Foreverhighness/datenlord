@@ -1002,6 +1002,7 @@ where
                     block_size,
                     kv_cache_id,
                     mr_token,
+                    _local_mr: Some(Arc::new(local_mr)),
                 });
             }
 

@@ -27,7 +27,7 @@ impl Encode for MrToken {
 }
 
 impl Decode for MrToken {
-    fn decode(buf: &mut BytesMut) -> Result<Self, RpcError>
+    fn decode_u8_buf(mut buf: &[u8]) -> Result<Self, RpcError>
     where
         Self: Sized,
     {

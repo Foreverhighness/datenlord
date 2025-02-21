@@ -46,6 +46,14 @@ pub trait Decode {
     {
         unimplemented!("Not implemented for this type")
     }
+
+    /// Decode the data into a data structure, used in rdma feature.
+    fn decode_u8_buf(_buf: &[u8]) -> Result<Self, RpcError>
+    where
+        Self: Sized,
+    {
+        unimplemented!("Not implemented for this type")
+    }
 }
 
 /// The `ActualSize` trait is used to get the actual size of the data structure.
@@ -361,7 +369,8 @@ impl<P: Packet + Send + Sync> PacketsKeeper<P> {
                             .await;
                     }
                 }
-                packets_inner.remove_task(seq);
+                let opt = packets_inner.remove_task(seq);
+                debug_assert!(opt.is_none());
 
                 return Ok(());
             }

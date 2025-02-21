@@ -30,13 +30,13 @@ impl Encode for KVBlockGetRequestWithRdma {
 
 impl Decode for KVBlockGetRequestWithRdma {
     /// Decode the byte buffer into a kv block get request.
-    fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
+    fn decode_u8_buf(mut buf: &[u8]) -> Result<Self, RpcError> {
         if buf.len() < 40 {
             return Err(RpcError::InternalError("Insufficient bytes".to_owned()));
         }
         let block_size = buf.get_u64_le();
         let kv_cache_id = buf.get_u64_le();
-        let mr_token = MrToken::decode(buf).unwrap();
+        let mr_token = MrToken::decode_u8_buf(buf).unwrap();
         Ok(Self {
             block_size,
             kv_cache_id,

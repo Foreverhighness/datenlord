@@ -31,14 +31,14 @@ impl Encode for KVBlockBatchPutRequestWithRdma {
 
 impl Decode for KVBlockBatchPutRequestWithRdma {
     /// Decode the byte buffer into a kv block batch put request.
-    fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
+    fn decode_u8_buf(mut buf: &[u8]) -> Result<Self, RpcError> {
         if buf.len() < 8 {
             return Err(RpcError::InternalError("Insufficient bytes".to_owned()));
         }
         let batch_size = u64_to_usize(buf.get_u64_le());
         let mut put_requests = Vec::with_capacity(batch_size);
         for _ in 0..batch_size {
-            put_requests.push(KVBlockPutRequestWithRdma::decode(buf)?);
+            put_requests.push(KVBlockPutRequestWithRdma::decode_u8_buf(buf)?);
         }
         Ok(Self { put_requests })
     }

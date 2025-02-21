@@ -1,12 +1,11 @@
 use std::{
-    alloc::Layout,
     cell::UnsafeCell,
     fmt::{self, Debug},
-    io::{IoSlice, Write},
+    io::IoSlice,
     sync::Arc,
 };
 
-use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma};
+use async_rdma::Rdma;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::{
@@ -43,6 +42,17 @@ pub trait RpcServerConnectionHandler {
         req_buffer: BytesMut,
         done_tx: mpsc::Sender<Vec<bytes::Bytes>>,
     );
+
+    /// Dispatch the handler with rdma.
+    async fn dispatch_with_rdma(
+        &self,
+        req_header: ReqHeader,
+        req_buffer: BytesMut,
+        done_tx: mpsc::Sender<Vec<bytes::Bytes>>,
+        _rdma: &Arc<Rdma>,
+    ) {
+        self.dispatch(req_header, req_buffer, done_tx).await
+    }
 }
 
 /// The connection for the RPC server.
@@ -62,7 +72,7 @@ where
     T: RpcServerConnectionHandler + Send + Sync + 'static,
 {
     /// The RDMA state for the connection
-    rdma: UnsafeCell<Rdma>,
+    rdma: Option<Arc<Rdma>>,
     /// The TCP stream for the connection.
     stream: UnsafeCell<net::TcpStream>,
     /// The worker pool for the connection.
@@ -106,7 +116,7 @@ where
     ) -> Self {
         debug_assert!(rdma.is_some(), "testing");
         Self {
-            rdma: UnsafeCell::new(rdma.unwrap()),
+            rdma: rdma.map(Arc::new),
             stream: UnsafeCell::new(stream),
             worker_pool,
             timeout_options,
@@ -192,74 +202,74 @@ where
     /// The response is a byte array, contains the response header and body.
     pub async fn send_response(&self, resp: &[u8]) -> Result<(), RpcError> {
         // TODO(fh): refactor `send_response` to accept `resp: Response`
-        {
-            let is_body = resp.len() > 16 * 1024;
-            if is_body {
-                println!(
-                    "Server send get response len: {len} data: {data:?}",
-                    len = resp.len(),
-                    data = &resp[..34],
-                );
+        // {
+        //     let is_body = resp.len() > 16 * 1024;
+        //     if is_body {
+        //         println!(
+        //             "Server send get response len: {len} data: {data:?}",
+        //             len = resp.len(),
+        //             data = &resp[..34],
+        //         );
 
-                let rdma = unsafe { &*self.rdma.get() };
+        //         let rdma = unsafe { &*self.rdma.get() };
 
-                const LEN: usize = 16 * 1024;
-                type Data = [u8; LEN];
-                let mut local_mr = rdma
-                    .alloc_local_mr(Layout::new::<Data>())
-                    .expect("TODO(fh): Handle error");
-                let mut remote_mr = rdma
-                    .request_remote_mr(Layout::new::<Data>())
-                    .await
-                    .expect("TODO(fh): handle error");
-                local_mr.as_mut_slice().write(resp).unwrap();
+        //         const LEN: usize = 16 * 1024;
+        //         type Data = [u8; LEN];
+        //         let mut local_mr = rdma
+        //             .alloc_local_mr(Layout::new::<Data>())
+        //             .expect("TODO(fh): Handle error");
+        //         let mut remote_mr = rdma
+        //             .request_remote_mr(Layout::new::<Data>())
+        //             .await
+        //             .expect("TODO(fh): handle error");
+        //         local_mr.as_mut_slice().write(resp).unwrap();
 
-                rdma.write(&local_mr, &mut remote_mr)
-                    .await
-                    .expect("TODO(fh): Handle error");
-                rdma.send_remote_mr(remote_mr)
-                    .await
-                    .expect("TODO(fh): handle error");
+        //         rdma.write(&local_mr, &mut remote_mr)
+        //             .await
+        //             .expect("TODO(fh): Handle error");
+        //         rdma.send_remote_mr(remote_mr)
+        //             .await
+        //             .expect("TODO(fh): handle error");
 
-                println!("send remote mr success");
-            } else {
-                let op = resp[8];
-                match RespType::from_u8(op).unwrap() {
-                    RespType::KVBlockBatchPutResponse => {
-                        println!(
-                            "Server send put response len: {len} data: {data:?}",
-                            len = resp.len(),
-                            data = &resp[..34],
-                        );
+        //         println!("send remote mr success");
+        //     } else {
+        //         let op = resp[8];
+        //         match RespType::from_u8(op).unwrap() {
+        //             RespType::KVBlockBatchPutResponse => {
+        //                 println!(
+        //                     "Server send put response len: {len} data: {data:?}",
+        //                     len = resp.len(),
+        //                     data = &resp[..34],
+        //                 );
 
-                        let rdma = unsafe { self.rdma.get().as_ref() }.unwrap();
+        //                 let rdma = unsafe { self.rdma.get().as_ref() }.unwrap();
 
-                        const LEN: usize = 16 * 1024;
-                        type Data = [u8; LEN];
-                        let mut local_mr = rdma
-                            .alloc_local_mr(Layout::new::<Data>())
-                            .expect("TODO(fh): Handle error");
-                        let remote_mr = rdma
-                            .receive_remote_mr()
-                            .await
-                            .expect("TODO(fh): handle error");
+        //                 const LEN: usize = 16 * 1024;
+        //                 type Data = [u8; LEN];
+        //                 let mut local_mr = rdma
+        //                     .alloc_local_mr(Layout::new::<Data>())
+        //                     .expect("TODO(fh): Handle error");
+        //                 let remote_mr = rdma
+        //                     .receive_remote_mr()
+        //                     .await
+        //                     .expect("TODO(fh): handle error");
 
-                        rdma.read(&mut local_mr, &remote_mr)
-                            .await
-                            .expect("TODO(fh): Handle error");
-                        let data = local_mr.as_slice();
+        //                 rdma.read(&mut local_mr, &remote_mr)
+        //                     .await
+        //                     .expect("TODO(fh): Handle error");
+        //                 let data = local_mr.as_slice();
 
-                        debug!("Server read local_mr len: {len}", len = data.len());
-                        println!(
-                            "read data: {header:?} body: {body:?}",
-                            header = &data[..41],
-                            body = &data[41..50],
-                        );
-                    }
-                    _ => (),
-                }
-            }
-        }
+        //                 debug!("Server read local_mr len: {len}", len = data.len());
+        //                 println!(
+        //                     "read data: {header:?} body: {body:?}",
+        //                     header = &data[..41],
+        //                     body = &data[41..50],
+        //                 );
+        //             }
+        //             _ => (),
+        //         }
+        //     }
+        // }
 
         let writer = self.get_stream_mut();
         match write_all_timeout!(writer, resp, self.timeout_options.write_timeout).await {
@@ -366,10 +376,17 @@ where
                     req_header.seq
                 );
                 let req_buffer: &mut BytesMut = unsafe { &mut *self.inner.req_buf.get() };
-                self.inner
-                    .dispatch_handler
-                    .dispatch(req_header, req_buffer.clone(), done_tx)
-                    .await;
+                if let Some(rdma) = self.inner.rdma.as_ref() {
+                    self.inner
+                        .dispatch_handler
+                        .dispatch_with_rdma(req_header, req_buffer.clone(), done_tx, rdma)
+                        .await;
+                } else {
+                    self.inner
+                        .dispatch_handler
+                        .dispatch(req_header, req_buffer.clone(), done_tx)
+                        .await;
+                }
             } else {
                 debug!("Request body length is huge, try to read the request body");
                 // Huge body length, need to consider to take user buffer

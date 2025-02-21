@@ -1,6 +1,7 @@
 use core::mem;
+use std::sync::Arc;
 
-use async_rdma::MrToken;
+use async_rdma::{LocalMr, MrToken};
 use bytes::{Buf, BufMut, BytesMut};
 use clippy_utilities::OverflowArithmetic;
 
@@ -17,6 +18,8 @@ pub struct KVBlockPutRequestWithRdma {
     pub kv_cache_id: u64,
     /// The mr token.
     pub mr_token: MrToken,
+    /// The local mr, use to extend lifetime.
+    pub _local_mr: Option<Arc<LocalMr>>,
 }
 
 impl Encode for KVBlockPutRequestWithRdma {
@@ -30,17 +33,18 @@ impl Encode for KVBlockPutRequestWithRdma {
 
 impl Decode for KVBlockPutRequestWithRdma {
     /// Decode the byte buffer into a kv block put request.
-    fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
+    fn decode_u8_buf(mut buf: &[u8]) -> Result<Self, RpcError> {
         if buf.len() < 40 {
             return Err(RpcError::InternalError("Insufficient bytes".to_owned()));
         }
         let block_size = buf.get_u64_le();
         let kv_cache_id = buf.get_u64_le();
-        let mr_token = MrToken::decode(buf).unwrap();
+        let mr_token = MrToken::decode_u8_buf(buf).unwrap();
         Ok(Self {
             block_size,
             kv_cache_id,
             mr_token,
+            _local_mr: None,
         })
     }
 }

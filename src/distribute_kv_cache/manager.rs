@@ -1,6 +1,6 @@
 use std::{fmt, sync::Arc};
 
-use async_rdma::RdmaBuilder;
+use async_rdma::{Rdma, RdmaBuilder};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use clippy_utilities::Cast;
@@ -52,6 +52,7 @@ use super::{
             ReqType, RespType, StatusCode,
         },
         packet::{Encode, ReqHeader, RespHeader},
+        rdma::handler::KVBlockRdmaHandler,
         server::{RpcServer, RpcServerConnectionHandler},
         workerpool::{Job, WorkerPool},
     },
@@ -964,6 +965,42 @@ where
                         req_header.op
                     );
                 }
+            }
+        }
+    }
+
+    async fn dispatch_with_rdma(
+        &self,
+        req_header: ReqHeader,
+        req_buffer: BytesMut,
+        done_tx: mpsc::Sender<Vec<bytes::Bytes>>,
+        rdma: &Arc<Rdma>,
+    ) {
+        // debug!("KVCacheHandler: Received request: {:?}", req_header);
+        // Dispatch the handler for the connection
+        if let Ok(req_type) = ReqType::from_u8(req_header.op) {
+            // Dispatch current kv cache request to index or block handler.
+            match req_type {
+                ReqType::KVBlockGetRequestWithRdma | ReqType::KVBlockBatchPutRequestWithRdma => {
+                    // Dispatch the block handler
+                    let handler = KVBlockRdmaHandler::new(
+                        req_header,
+                        req_buffer.freeze(),
+                        done_tx,
+                        Arc::clone(&self.cache_manager),
+                        Arc::clone(rdma),
+                    );
+                    if let Ok(()) = self
+                        .worker_pool
+                        .submit_job(Box::new(handler))
+                        .map_err(|err| {
+                            debug!("Failed to submit job: {:?}", err);
+                        })
+                    {
+                        debug!("Submitted job to worker pool");
+                    }
+                }
+                _ => self.dispatch(req_header, req_buffer, done_tx).await,
             }
         }
     }

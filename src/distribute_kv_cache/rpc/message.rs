@@ -1630,12 +1630,14 @@ where
                 Ok(Self::KVBlockBatchPutRequest(request))
             }
             ReqType::KVBlockGetRequestWithRdma => {
-                let request = KVBlockGetRequestWithRdma::decode(buf)?;
-                Ok(Self::KVBlockGetRequestWithRdma(request))
+                // let request = KVBlockGetRequestWithRdma::decode(buf)?;
+                // Ok(Self::KVBlockGetRequestWithRdma(request))
+                unimplemented!()
             }
             ReqType::KVBlockBatchPutRequestWithRdma => {
-                let request = KVBlockBatchPutRequestWithRdma::decode(buf)?;
-                Ok(Self::KVBlockBatchPutRequestWithRdma(request))
+                // let request = KVBlockBatchPutRequestWithRdma::decode(buf)?;
+                // Ok(Self::KVBlockBatchPutRequestWithRdma(request))
+                unimplemented!()
             }
             _ => Err(RpcError::InternalError("Invalid request type".to_owned())),
         }
