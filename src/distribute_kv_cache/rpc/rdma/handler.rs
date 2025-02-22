@@ -2,13 +2,17 @@ use std::sync::Arc;
 
 use async_rdma::{LocalMrReadAccess, Rdma, RemoteMr};
 use async_trait::async_trait;
+use bytes::BytesMut;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
 
 use crate::distribute_kv_cache::local_cache::block::{Block, MetaData};
 use crate::distribute_kv_cache::local_cache::manager::KVBlockManager;
-use crate::distribute_kv_cache::rpc::message::ReqType;
-use crate::distribute_kv_cache::rpc::packet::{Decode, ReqHeader};
+use crate::distribute_kv_cache::rpc::message::{ReqType, RespType};
+use crate::distribute_kv_cache::rpc::packet::{
+    self, ActualSize, Decode, Encode, ReqHeader, RespHeader,
+};
+use crate::distribute_kv_cache::rpc::rdma::message::KVBlockBatchPutResponseWithRdma;
 use crate::distribute_kv_cache::rpc::utils::u64_to_usize;
 use crate::distribute_kv_cache::rpc::workerpool::Job;
 
@@ -63,7 +67,7 @@ impl Job for KVBlockRdmaHandler {
         };
 
         let req_buffer = &self.request[..];
-        let resp_bytes_vec = vec![];
+        let mut resp_bytes_vec = vec![];
 
         println!("KVBlockRdmaHandler run req_type: {req_type:?}");
 
@@ -87,8 +91,8 @@ impl Job for KVBlockRdmaHandler {
 
                 println!("KVBlockRdmaHandler run KVBlockBatchPutRequestWithRdma req: {req:?}");
 
-                let mut success_ids = vec![];
-                let mut failed_ids = vec![];
+                let mut success_kv_cache_ids = vec![];
+                let mut failed_kv_cache_ids = vec![];
 
                 // FIXME(fh): Only allow one size for kv blocks?
                 let block_size = req.put_requests[0].block_size;
@@ -118,7 +122,7 @@ impl Job for KVBlockRdmaHandler {
 
                     if let Err(err) = self.rdma.read(&mut local_mr, &remote_mr).await {
                         error!("Failed to read remote mr: {err:?}");
-                        failed_ids.push(cache_id);
+                        failed_kv_cache_ids.push(cache_id);
                         continue;
                     }
 
@@ -135,7 +139,7 @@ impl Job for KVBlockRdmaHandler {
                     );
                     match self.cache_manager.write(kv_block).await {
                         Ok(()) => {
-                            success_ids.push(cache_id);
+                            success_kv_cache_ids.push(cache_id);
                             let block_start_1 = block_start.elapsed();
                             debug!(
                                 "KVBlockBatchPutRequest write block: Time elapsed: {:?}",
@@ -144,10 +148,29 @@ impl Job for KVBlockRdmaHandler {
                         }
                         Err(err) => {
                             error!("Failed to put block into cache: {:?}", err);
-                            failed_ids.push(cache_id);
+                            failed_kv_cache_ids.push(cache_id);
                         }
                     }
                 }
+
+                // Prepare response
+                let batch_put_resp = KVBlockBatchPutResponseWithRdma {
+                    success_kv_cache_ids,
+                    failed_kv_cache_ids,
+                };
+                let resp_header = RespHeader {
+                    seq: self.header.seq,
+                    op: RespType::KVBlockBatchPutResponseWithRdma.to_u8(),
+                    len: batch_put_resp.actual_size(),
+                };
+                let mut buffer = BytesMut::with_capacity(u64_to_usize(
+                    packet::RESP_HEADER_SIZE + batch_put_resp.actual_size(),
+                ));
+
+                resp_header.encode(&mut buffer);
+                batch_put_resp.encode(&mut buffer);
+
+                resp_bytes_vec.push(buffer.freeze());
             }
             _ => {
                 error!("Invalid request type: {req_type:?}");

@@ -1056,6 +1056,13 @@ where
                         debug!("Batch put blocks: {:?}", response);
                         Ok(())
                     }
+                    KVCacheResponse::KVBlockBatchPutResponseWithRdma(response) => {
+                        let start_4 = start.elapsed();
+                        debug!("KVCacheResponse::KVBlockBatchPutResponseWithRdma(response) check Time cost: {:?}", start_4 - start_3);
+                        // TODO: show block result here.
+                        debug!("Batch put RDMA blocks: {:?}", response);
+                        Ok(())
+                    }
                     _ => Err(DatenLordError::DistributeCacheManagerErr {
                         context: vec![format!("Failed to read block: {:?}", response)],
                     }),

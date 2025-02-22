@@ -1716,7 +1716,7 @@ impl KVCacheResponse {
             }
 
             RespType::KVBlockGetResponseWithRdma => {
-                let response = KVBlockGetResponseWithRdma::decode_large_data(buf.freeze())?;
+                let response = KVBlockGetResponseWithRdma::decode(&mut buf)?;
                 Ok(Self::KVBlockGetResponseWithRdma(response))
             }
             RespType::KVBlockBatchPutResponseWithRdma => {
@@ -1862,6 +1862,19 @@ where
             RespType::KVBlockBatchPutResponse => {
                 self.response = Some(KVCacheResponse::decode(
                     RespType::KVBlockBatchPutResponse,
+                    data,
+                )?);
+            }
+
+            RespType::KVBlockGetResponseWithRdma => {
+                self.response = Some(KVCacheResponse::decode(
+                    RespType::KVBlockGetResponseWithRdma,
+                    data,
+                )?);
+            }
+            RespType::KVBlockBatchPutResponseWithRdma => {
+                self.response = Some(KVCacheResponse::decode(
+                    RespType::KVBlockBatchPutResponseWithRdma,
                     data,
                 )?);
             }

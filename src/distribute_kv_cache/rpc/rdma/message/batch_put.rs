@@ -5,7 +5,6 @@ use clippy_utilities::OverflowArithmetic;
 
 use crate::async_fuse::util::usize_to_u64;
 use crate::distribute_kv_cache::rpc::error::RpcError;
-use crate::distribute_kv_cache::rpc::message::KVBlockBatchPutResponse;
 use crate::distribute_kv_cache::rpc::packet::{ActualSize, Decode, Encode};
 use crate::distribute_kv_cache::rpc::utils::u64_to_usize;
 
@@ -58,27 +57,64 @@ impl ActualSize for KVBlockBatchPutRequestWithRdma {
 /// The response to put multiple kv blocks.
 #[derive(Debug, Clone)]
 pub struct KVBlockBatchPutResponseWithRdma {
-    /// The response to put kv blocks.
-    pub batch_put_response: KVBlockBatchPutResponse,
+    /// The success kv cache ids.
+    pub success_kv_cache_ids: Vec<u64>,
+    /// The failed kv cache ids.
+    pub failed_kv_cache_ids: Vec<u64>,
 }
 
 impl Encode for KVBlockBatchPutResponseWithRdma {
     /// Encode the kv block batch put response into a byte buffer.
     fn encode(&self, buf: &mut BytesMut) {
-        self.batch_put_response.encode(buf);
+        let ids = &self.success_kv_cache_ids;
+
+        let batch_size = usize_to_u64(ids.len());
+        buf.put_u64_le(batch_size);
+        for &id in ids {
+            buf.put_u64_le(id);
+        }
+
+        let ids = &self.failed_kv_cache_ids;
+
+        let batch_size = usize_to_u64(ids.len());
+        buf.put_u64_le(batch_size);
+        for &id in ids {
+            buf.put_u64_le(id);
+        }
     }
 }
 
 impl ActualSize for KVBlockBatchPutResponseWithRdma {
     fn actual_size(&self) -> u64 {
-        unimplemented!("underlay KVBlockBatchPutResponse has not impl this method")
+        let num_of_elem = self.success_kv_cache_ids.len() + self.failed_kv_cache_ids.len();
+        usize_to_u64(
+            mem::size_of::<u64>() + mem::size_of::<u64>() + mem::size_of::<u64>() * num_of_elem,
+        )
     }
 }
 
 impl Decode for KVBlockBatchPutResponseWithRdma {
     /// Decode the byte buffer into a kv block get response.
     fn decode(buf: &mut BytesMut) -> Result<Self, RpcError> {
-        let batch_put_response = KVBlockBatchPutResponse::decode(buf).unwrap();
-        Ok(Self { batch_put_response })
+        if buf.len() < 16 {
+            return Err(RpcError::InternalError("Insufficient bytes".to_owned()));
+        }
+
+        let size = u64_to_usize(buf.get_u64_le());
+        let mut success_kv_cache_ids = Vec::with_capacity(size);
+        for _ in 0..size {
+            success_kv_cache_ids.push(buf.get_u64_le());
+        }
+
+        let size = u64_to_usize(buf.get_u64_le());
+        let mut failed_kv_cache_ids = Vec::with_capacity(size);
+        for _ in 0..size {
+            failed_kv_cache_ids.push(buf.get_u64_le());
+        }
+
+        Ok(Self {
+            success_kv_cache_ids,
+            failed_kv_cache_ids,
+        })
     }
 }
