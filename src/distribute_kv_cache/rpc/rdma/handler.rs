@@ -1,6 +1,7 @@
+use std::alloc::Layout;
 use std::sync::Arc;
 
-use async_rdma::{LocalMrReadAccess, Rdma, RemoteMr};
+use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RemoteMr};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::sync::mpsc;
@@ -8,11 +9,13 @@ use tracing::{debug, error};
 
 use crate::distribute_kv_cache::local_cache::block::{Block, MetaData};
 use crate::distribute_kv_cache::local_cache::manager::KVBlockManager;
-use crate::distribute_kv_cache::rpc::message::{ReqType, RespType};
+use crate::distribute_kv_cache::rpc::message::{ReqType, RespType, StatusCode};
 use crate::distribute_kv_cache::rpc::packet::{
     self, ActualSize, Decode, Encode, ReqHeader, RespHeader,
 };
-use crate::distribute_kv_cache::rpc::rdma::message::KVBlockBatchPutResponseWithRdma;
+use crate::distribute_kv_cache::rpc::rdma::message::{
+    KVBlockBatchPutResponseWithRdma, KVBlockGetRequestWithRdma, KVBlockGetResponseWithRdma,
+};
 use crate::distribute_kv_cache::rpc::utils::u64_to_usize;
 use crate::distribute_kv_cache::rpc::workerpool::Job;
 
@@ -73,7 +76,83 @@ impl Job for KVBlockRdmaHandler {
 
         match req_type {
             ReqType::KVBlockGetRequestWithRdma => {
-                todo!()
+                let req = match KVBlockGetRequestWithRdma::decode_u8_buf(req_buffer) {
+                    Ok(req) => req,
+                    Err(err) => {
+                        debug!("Failed to decode file block request: {:?}", err);
+                        return;
+                    }
+                };
+
+                println!("KVBlockRdmaHandler run KVBlockGetRequestWithRdma req: {req:?}");
+                let KVBlockGetRequestWithRdma {
+                    block_size,
+                    kv_cache_id,
+                    mr_token,
+                } = req;
+
+                // Default response
+                let mut response = KVBlockGetResponseWithRdma {
+                    kv_cache_id,
+                    block_size,
+                    status: StatusCode::InternalError,
+                };
+
+                // Get the block by id
+                let metadata = MetaData::new(kv_cache_id, 0, 0, 0);
+                if let Ok(Some(block)) = self.cache_manager.read(metadata).await {
+                    let data = block.read().unwrap().get_data();
+
+                    // Put block data to remote mr
+                    let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
+                    // Safety: immediate initialize
+                    let mut local_mr = match unsafe { self.rdma.alloc_local_mr_uninit(layout) } {
+                        Ok(local_mr) => local_mr,
+                        Err(err) => {
+                            error!("Failed to allocate local mr: {err:?}");
+                            // TODO(fh): decision on how to handle this error? immediately return or response with failed message?
+                            return;
+                        }
+                    };
+                    println!("RDMA alloc local_mr success");
+
+                    debug_assert_eq!(data.len(), u64_to_usize(block_size));
+
+                    local_mr.as_mut_slice().copy_from_slice(&data);
+                    println!(
+                        "FH: get block data: {data:?}",
+                        data = &local_mr.as_slice()[..30]
+                    );
+
+                    let mut remote_mr = RemoteMr::new(mr_token);
+
+                    match self.rdma.write(&local_mr, &mut remote_mr).await {
+                        Ok(()) => {
+                            response = KVBlockGetResponseWithRdma {
+                                kv_cache_id,
+                                block_size,
+                                status: StatusCode::Success,
+                            };
+                        }
+                        Err(err) => {
+                            error!("Failed to write remote mr: {err:?}");
+                        }
+                    }
+                }
+
+                let resp_header = RespHeader {
+                    seq: self.header.seq,
+                    op: RespType::KVBlockGetResponseWithRdma.to_u8(),
+                    len: response.actual_size(),
+                };
+                let mut buffer = BytesMut::with_capacity(u64_to_usize(
+                    packet::RESP_HEADER_SIZE + response.actual_size(),
+                ));
+
+                resp_header.encode(&mut buffer);
+                response.encode(&mut buffer);
+
+                resp_bytes_vec.push(buffer.freeze());
             }
             ReqType::KVBlockBatchPutRequestWithRdma => {
                 let req = match KVBlockBatchPutRequestWithRdma::decode_u8_buf(req_buffer) {
@@ -109,6 +188,7 @@ impl Job for KVBlockRdmaHandler {
                     Ok(local_mr) => local_mr,
                     Err(err) => {
                         error!("Failed to allocate local mr: {err:?}");
+                        // TODO(fh): decision on how to handle this error? immediately return or response with all failed ids?
                         return;
                     }
                 };

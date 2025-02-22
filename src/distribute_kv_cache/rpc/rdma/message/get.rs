@@ -110,3 +110,14 @@ impl Decode for KVBlockGetResponseWithRdma {
         })
     }
 }
+
+impl ActualSize for KVBlockGetResponseWithRdma {
+    fn actual_size(&self) -> u64 {
+        let block_size_len = usize_to_u64(mem::size_of_val(&self.block_size));
+        let kv_cache_id_len = usize_to_u64(mem::size_of_val(&self.kv_cache_id));
+        let status_len = usize_to_u64(mem::size_of_val(&self.status));
+        block_size_len
+            .overflow_add(kv_cache_id_len)
+            .overflow_add(status_len)
+    }
+}

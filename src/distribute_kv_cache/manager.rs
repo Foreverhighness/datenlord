@@ -393,6 +393,7 @@ impl Job for KVBlockHandler {
                                 kv_block_get_resp = KVBlockGetResponse {
                                     kv_cache_id: req_body.kv_cache_id,
                                     block_size: req_body.block_size,
+                                    // FIXME: wrong status
                                     status: StatusCode::InternalError,
                                     data,
                                 };

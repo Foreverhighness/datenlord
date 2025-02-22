@@ -16,7 +16,9 @@ use crate::{
     connect_timeout,
     distribute_kv_cache::rpc::{
         message,
-        rdma::message::{KVBlockBatchPutRequestWithRdma, KVBlockPutRequestWithRdma},
+        rdma::message::{
+            KVBlockBatchPutRequestWithRdma, KVBlockGetRequestWithRdma, KVBlockPutRequestWithRdma,
+        },
     },
 };
 
@@ -911,16 +913,47 @@ where
     /// Get the kv block from the distribute cache node
     async fn get_block(&self, addr: String, kv_cache_id: u64) -> DatenLordResult<bytes::Bytes> {
         let (tx, rx) = flume::unbounded::<Result<KVCacheResponse, KVCacheRequest<K>>>();
-        let kv_cache_request = KVCacheRequest::KVBlockGetRequest(KVBlockGetRequest {
-            block_size: self.block_size,
-            kv_cache_id,
-        });
-        let packet = KVCachePacket::new(
-            ReqType::KVBlockGetRequest.to_u8(),
-            kv_cache_request,
-            tx.clone(),
-        );
+
         let rpc_client = self.get_client(addr.clone()).await?;
+
+        let mut local_mr_opt = None;
+        let packet = if let Some(rdma) = rpc_client.get_rdma() {
+            let block_size = self.block_size;
+            let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
+            // Safety: initialization by server write
+            let local_mr = unsafe { rdma.alloc_local_mr_uninit(layout) }.map_err(|err| {
+                DatenLordError::DistributeCacheManagerErr {
+                    context: vec![format!("Failed to alloc local mr: {:?}", err)],
+                }
+            })?;
+            println!("client get block alloc local mr success");
+
+            let mr_token = local_mr.token_with_timeout(Duration::default()).unwrap();
+            println!("client get block mr_token: {mr_token:?}");
+
+            local_mr_opt = Some(Arc::new(local_mr));
+            let get_request = KVBlockGetRequestWithRdma {
+                block_size,
+                kv_cache_id,
+                mr_token,
+            };
+            let kv_cache_request = KVCacheRequest::KVBlockGetRequestWithRdma(get_request);
+            KVCachePacket::new(
+                ReqType::KVBlockGetRequestWithRdma.to_u8(),
+                kv_cache_request,
+                tx.clone(),
+            )
+        } else {
+            let kv_cache_request = KVCacheRequest::KVBlockGetRequest(KVBlockGetRequest {
+                block_size: self.block_size,
+                kv_cache_id,
+            });
+            KVCachePacket::new(
+                ReqType::KVBlockGetRequest.to_u8(),
+                kv_cache_request,
+                tx.clone(),
+            )
+        };
         rpc_client.send_request(packet).await.map_err(|err| {
             DatenLordError::DistributeCacheManagerErr {
                 context: vec![format!("Failed to send request: {:?}", err)],
@@ -934,6 +967,17 @@ where
                     debug!("Get block from remote cache");
                     // Return bytes here.
                     Ok(response.data)
+                    // return Ok(vec![]);
+                }
+                KVCacheResponse::KVBlockGetResponseWithRdma(response) => {
+                    debug!("Get block from remote cache with RDMA resp: {response:?}");
+                    // Return bytes here.
+                    let data = local_mr_opt
+                        .as_ref()
+                        .map(|mr| mr.as_slice().to_vec())
+                        .unwrap();
+                    println!("client get block : {data:?}", data = &data[..30]);
+                    Ok(data.into())
                     // return Ok(vec![]);
                 }
                 _ => Err(DatenLordError::DistributeCacheManagerErr {
@@ -990,6 +1034,7 @@ where
                 println!("client put block alloc local mr success");
                 debug_assert_eq!(local_mr.length(), data.len());
 
+                // TODO(fh): replace with write? because `copy_from_slice` will panic when local_mr size is different with data size.
                 local_mr.as_mut_slice().copy_from_slice(&data);
                 println!(
                     "client put block set local mr: {data:?}",
