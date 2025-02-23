@@ -109,20 +109,16 @@ async fn main() -> DatenLordResult<()> {
     let cache_manager = Arc::new(KVBlockManager::default());
     let index_manager = Arc::new(IndexManager::<u32>::new());
 
-    let rdma = match RdmaBuilder::default().build() {
-        Ok(rdma) => {
-            println!("RDMA created successfully");
-            Some(rdma)
-        }
-        Err(e) => {
-            println!("failed to init rdma: {e:?}");
-            None
-        }
-    };
-
     let pool = Arc::new(WorkerPool::new(5, 5));
     let handler = KVCacheHandler::new(Arc::clone(&pool), cache_manager, index_manager);
-    let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler, rdma);
+    let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler);
+    match RdmaBuilder::default().build() {
+        Ok(rdma) => {
+            server.init_rdma(rdma);
+            println!("RDMA created successfully");
+        }
+        Err(e) => println!("failed to init rdma: {e:?}"),
+    };
     match server.listen(&addr).await {
         Ok(()) => {
             info!("KV cache server started successfully");

@@ -1,4 +1,4 @@
-use core::{alloc::Layout, fmt};
+use core::fmt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, MrAccess, Rdma};
@@ -244,12 +244,17 @@ where
 {
     /// Create a new distribute cache client
     #[must_use]
-    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64, rdma: Option<Rdma>) -> Self {
-        let inner = DistributeKVCacheClientInner::new(cluster_manager, block_size, rdma);
+    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
+        let inner = DistributeKVCacheClientInner::new(cluster_manager, block_size);
         Self {
             inner,
             block_cache: Arc::new(Mutex::new(LocalBlockCache::new(block_size))),
         }
+    }
+
+    /// Init RDMA state
+    pub fn init_rdma(&mut self, rdma: Rdma) {
+        self.inner.init_rdma(rdma);
     }
 
     /// Start the distribute cache client watch task
@@ -623,14 +628,19 @@ where
 {
     /// Create a new distribute cache client
     #[must_use]
-    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64, rdma: Option<Rdma>) -> Self {
+    pub fn new(cluster_manager: Arc<ClusterManager>, block_size: u64) -> Self {
         let rpc_client_cache = Arc::new(Mutex::new(HashMap::new()));
         Self {
             cluster_manager,
             rpc_client_cache,
             block_size,
-            rdma: rdma.map(|rdma| Arc::new(Mutex::new(rdma))),
+            rdma: None,
         }
+    }
+
+    /// init RDMA state
+    pub fn init_rdma(&mut self, rdma: Rdma) {
+        self.rdma = Some(Arc::new(Mutex::new(rdma)));
     }
 
     /// Start the distribute cache client watch task
@@ -919,7 +929,8 @@ where
         let mut local_mr_opt = None;
         let packet = if let Some(rdma) = rpc_client.get_rdma() {
             let block_size = self.block_size;
-            let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
+            let layout =
+                std::alloc::Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
             // Safety: initialization by server write
             let local_mr = unsafe { rdma.alloc_local_mr_uninit(layout) }.map_err(|err| {
                 DatenLordError::DistributeCacheManagerErr {
@@ -1023,7 +1034,8 @@ where
             } in kv_block_put_requests
             {
                 debug_assert_eq!(data.len(), u64_to_usize(block_size));
-                let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
+                let layout =
+                    std::alloc::Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
                 // Safety: Immediate initialization
                 let mut local_mr =
                     unsafe { rdma.alloc_local_mr_uninit(layout) }.map_err(|err| {
@@ -1158,8 +1170,11 @@ where
                 None
             };
 
-            let rpc_client =
-                RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options, rdma);
+            let rpc_client = RpcClient::<KVCachePacket<K>>::new(connect_stream, &timeout_options);
+            if let Some(rdma) = rdma {
+                rpc_client.init_rdma(rdma);
+            }
+
             rpc_client.start_recv();
 
             // TODO: add ping into a loop.
@@ -1285,7 +1300,7 @@ mod tests {
         let index_manager = Arc::new(IndexManager::<u32>::new());
         let pool = Arc::new(WorkerPool::new(5, 5));
         let handler = KVCacheHandler::new(Arc::clone(&pool), cache_manager, index_manager);
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler, None);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 5, 5, handler);
         server.listen(&addr).await.unwrap();
 
         let etcd_endpoint = "localhost:2379";
@@ -1297,7 +1312,6 @@ mod tests {
         let distribute_kvcache_client_inner = DistributeKVCacheClientInner::<u32>::new(
             Arc::new(ClusterManager::new(client, node)),
             64,
-            None,
         );
 
         let res = distribute_kvcache_client_inner.get_client(addr).await;

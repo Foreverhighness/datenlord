@@ -201,8 +201,7 @@ mod tests {
         let addr = "127.0.0.1:2788";
         let pool = Arc::new(WorkerPool::new(1000, 1000));
         let handler = FileBlockRpcServerHandler::new(Arc::clone(&pool));
-        let mut server =
-            RpcServer::new(&ServerTimeoutOptions::default(), 1000, 1000, handler, None);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 1000, 1000, handler);
         server.listen(addr).await.unwrap();
         time::sleep(Duration::from_secs(1)).await;
         assert!(is_port_in_use(addr).await);
@@ -219,7 +218,7 @@ mod tests {
             .await
             .unwrap();
 
-        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options, None);
+        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options);
         rpc_client.start_recv();
 
         time::sleep(Duration::from_secs(1)).await;
@@ -312,7 +311,7 @@ mod tests {
         let addr = "127.0.0.1:2791";
         let pool = Arc::new(WorkerPool::new(4, 100));
         let handler = FileBlockRpcServerHandler::new(Arc::clone(&pool));
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler, None);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler);
         server.listen(addr).await.unwrap();
         time::sleep(Duration::from_secs(1)).await;
         assert!(is_port_in_use(addr).await);
@@ -329,7 +328,7 @@ mod tests {
             .await
             .unwrap();
 
-        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options, None);
+        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options);
         rpc_client.start_recv();
 
         time::sleep(Duration::from_secs(5)).await;
@@ -347,7 +346,7 @@ mod tests {
         let addr = "127.0.0.1:2792";
         let pool = Arc::new(WorkerPool::new(4, 100));
         let handler = FileBlockRpcServerHandler::new(Arc::clone(&pool));
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler, None);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler);
         server.listen(addr).await.unwrap();
         time::sleep(Duration::from_secs(1)).await;
         assert!(is_port_in_use(addr).await);
@@ -364,7 +363,7 @@ mod tests {
             .await
             .unwrap();
 
-        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options, None);
+        let rpc_client = RpcClient::<FileBlockPacket>::new(connect_stream, &timeout_options);
         rpc_client.start_recv();
 
         // Drop client

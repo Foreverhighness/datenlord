@@ -118,7 +118,7 @@ mod tests {
 
         // Setup the kv cache client
         let block_size = 0x0100_0000;
-        let kvcacheclient = DistributeKVCacheClient::new(cluster_manager, block_size, None);
+        let kvcacheclient = DistributeKVCacheClient::new(cluster_manager, block_size);
         kvcacheclient.start_watch().await.unwrap();
 
         // // Test insert 1 to the kv cache client

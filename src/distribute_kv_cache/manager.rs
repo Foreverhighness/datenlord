@@ -1153,8 +1153,10 @@ where
                 );
                 let server_timeout_options = ServerTimeoutOptions::default();
                 // Create a new rpc server with max 100 workers and 1000 jobs
-                let mut rpc_server =
-                    RpcServer::new(&server_timeout_options, 64, 1000, handler, rdma);
+                let mut rpc_server = RpcServer::new(&server_timeout_options, 64, 1000, handler);
+                if let Some(rdma) = rdma {
+                    rpc_server.init_rdma(rdma);
+                }
                 match rpc_server.listen(&addr).await {
                     Ok(()) => {
                         info!("Rpc server started on: {}", addr);

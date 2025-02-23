@@ -72,7 +72,7 @@ where
     T: RpcServerConnectionHandler + Send + Sync + 'static,
 {
     /// The RDMA state for the connection
-    rdma: Option<Arc<Rdma>>,
+    rdma: UnsafeCell<Option<Arc<Rdma>>>,
     /// The TCP stream for the connection.
     stream: UnsafeCell<net::TcpStream>,
     /// The worker pool for the connection.
@@ -112,18 +112,22 @@ where
         worker_pool: Arc<WorkerPool>,
         timeout_options: ServerTimeoutOptions,
         dispatch_handler: T,
-        rdma: Option<Rdma>,
     ) -> Self {
-        debug_assert!(rdma.is_some(), "testing");
         Self {
-            rdma: rdma.map(Arc::new),
             stream: UnsafeCell::new(stream),
             worker_pool,
             timeout_options,
             dispatch_handler,
             // Init buffer size is 64MB
             req_buf: UnsafeCell::new(BytesMut::with_capacity(64 * 1024 * 1024)),
+
+            rdma: UnsafeCell::new(None),
         }
+    }
+
+    /// Init RDMA state
+    pub fn init_rdma(&self, rdma: Rdma) {
+        unsafe { *self.rdma.get() = Some(Arc::new(rdma)) };
     }
 
     /// Recv request header from the stream
@@ -201,76 +205,6 @@ where
     /// Send response to the stream
     /// The response is a byte array, contains the response header and body.
     pub async fn send_response(&self, resp: &[u8]) -> Result<(), RpcError> {
-        // TODO(fh): refactor `send_response` to accept `resp: Response`
-        // {
-        //     let is_body = resp.len() > 16 * 1024;
-        //     if is_body {
-        //         println!(
-        //             "Server send get response len: {len} data: {data:?}",
-        //             len = resp.len(),
-        //             data = &resp[..34],
-        //         );
-
-        //         let rdma = unsafe { &*self.rdma.get() };
-
-        //         const LEN: usize = 16 * 1024;
-        //         type Data = [u8; LEN];
-        //         let mut local_mr = rdma
-        //             .alloc_local_mr(Layout::new::<Data>())
-        //             .expect("TODO(fh): Handle error");
-        //         let mut remote_mr = rdma
-        //             .request_remote_mr(Layout::new::<Data>())
-        //             .await
-        //             .expect("TODO(fh): handle error");
-        //         local_mr.as_mut_slice().write(resp).unwrap();
-
-        //         rdma.write(&local_mr, &mut remote_mr)
-        //             .await
-        //             .expect("TODO(fh): Handle error");
-        //         rdma.send_remote_mr(remote_mr)
-        //             .await
-        //             .expect("TODO(fh): handle error");
-
-        //         println!("send remote mr success");
-        //     } else {
-        //         let op = resp[8];
-        //         match RespType::from_u8(op).unwrap() {
-        //             RespType::KVBlockBatchPutResponse => {
-        //                 println!(
-        //                     "Server send put response len: {len} data: {data:?}",
-        //                     len = resp.len(),
-        //                     data = &resp[..34],
-        //                 );
-
-        //                 let rdma = unsafe { self.rdma.get().as_ref() }.unwrap();
-
-        //                 const LEN: usize = 16 * 1024;
-        //                 type Data = [u8; LEN];
-        //                 let mut local_mr = rdma
-        //                     .alloc_local_mr(Layout::new::<Data>())
-        //                     .expect("TODO(fh): Handle error");
-        //                 let remote_mr = rdma
-        //                     .receive_remote_mr()
-        //                     .await
-        //                     .expect("TODO(fh): handle error");
-
-        //                 rdma.read(&mut local_mr, &remote_mr)
-        //                     .await
-        //                     .expect("TODO(fh): Handle error");
-        //                 let data = local_mr.as_slice();
-
-        //                 debug!("Server read local_mr len: {len}", len = data.len());
-        //                 println!(
-        //                     "read data: {header:?} body: {body:?}",
-        //                     header = &data[..41],
-        //                     body = &data[41..50],
-        //                 );
-        //             }
-        //             _ => (),
-        //         }
-        //     }
-        // }
-
         let writer = self.get_stream_mut();
         match write_all_timeout!(writer, resp, self.timeout_options.write_timeout).await {
             Ok(()) => {
@@ -309,6 +243,11 @@ where
         // Current implementation is safe because the stream is only accessed by one thread
         unsafe { &mut *self.stream.get() }
     }
+
+    /// Get RDMA state
+    fn get_rdma(&self) -> Option<&Arc<Rdma>> {
+        unsafe { (*self.rdma.get()).as_ref() }
+    }
 }
 
 impl<T> RpcServerConnection<T>
@@ -321,16 +260,18 @@ where
         worker_pool: Arc<WorkerPool>,
         timeout_options: ServerTimeoutOptions,
         dispatch_handler: T,
-        rdma: Option<Rdma>,
     ) -> Self {
         let inner = Arc::new(RpcServerConnectionInner::new(
             stream,
             worker_pool,
             timeout_options,
             dispatch_handler,
-            rdma,
         ));
         Self { inner }
+    }
+    /// Init RDMA state
+    pub fn init_rdma(&mut self, rdma: Rdma) {
+        self.inner.init_rdma(rdma);
     }
 
     /// Dispatch the handler for the connection.
@@ -376,7 +317,7 @@ where
                     req_header.seq
                 );
                 let req_buffer: &mut BytesMut = unsafe { &mut *self.inner.req_buf.get() };
-                if let Some(rdma) = self.inner.rdma.as_ref() {
+                if let Some(rdma) = self.inner.get_rdma() {
                     self.inner
                         .dispatch_handler
                         .dispatch_with_rdma(req_header, req_buffer.clone(), done_tx, rdma)
@@ -540,18 +481,22 @@ where
         max_workers: usize,
         max_jobs: usize,
         dispatch_handler: T,
-        rdma: Option<Rdma>,
     ) -> Self {
         Self {
             timeout_options: timeout_options.clone(),
             main_worker: None,
-            rdma,
+            rdma: None,
             rpc_conn_worker_factory: RpcConnWorkerFactory::<T>::new(
                 max_workers,
                 max_jobs,
                 dispatch_handler,
             ),
         }
+    }
+
+    /// Init RDMA state
+    pub fn init_rdma(&mut self, rdma: Rdma) {
+        self.rdma = Some(rdma);
     }
 
     /// Start the RPC server.
@@ -579,6 +524,7 @@ where
                             }
                         };
                         debug!("Accepted connection from {:?}", addr);
+
                         let rdma = if let Some(rdma) = rdma.as_mut() {
                             let rdma = match rdma.receive_metadata_by_stream(&mut stream).await {
                                 Ok(rdma) => rdma,
@@ -594,13 +540,19 @@ where
                         } else {
                             None
                         };
-                        factory.serve(RpcServerConnection::<T>::new(
+
+                        let mut conn = RpcServerConnection::<T>::new(
                             stream,
                             Arc::clone(&factory.worker_pool),
                             conn_timeout_options,
                             factory.get_dispatch_handler(),
-                            rdma,
-                        ));
+                        );
+
+                        if let Some(rdma) = rdma {
+                            conn.init_rdma(rdma);
+                        }
+
+                        factory.serve(conn);
                     }
                     Err(err) => {
                         debug!("Failed to accept connection: {:?}", err);
@@ -671,7 +623,7 @@ mod tests {
     async fn test_rpc_server() {
         let addr = "127.0.0.1:2888";
         let handler = TestHandler::new();
-        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler, None);
+        let mut server = RpcServer::new(&ServerTimeoutOptions::default(), 4, 100, handler);
         server.listen(addr).await.unwrap();
         time::sleep(Duration::from_secs(1)).await;
         assert!(is_port_in_use(addr).await);
