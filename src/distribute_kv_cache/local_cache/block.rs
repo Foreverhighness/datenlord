@@ -1,4 +1,5 @@
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// The size of a block in bytes.
 // pub const BLOCK_SIZE: usize = 4 * 1024 * 1024;
@@ -108,6 +109,7 @@ impl MetaData {
 pub struct Block {
     meta_data: MetaData,
     data: bytes::Bytes,
+    local_mr: Option<Arc<async_rdma::LocalMr>>,
 }
 
 impl Block {
@@ -116,7 +118,11 @@ impl Block {
         // Make sure data length is BLOCK_SIZE
         // debug_assert!(data.len() == BLOCK_SIZE);
 
-        Block { meta_data, data }
+        Block {
+            meta_data,
+            data,
+            local_mr: None,
+        }
     }
 
     /// Get the block inner data of the Block
@@ -127,6 +133,20 @@ impl Block {
     /// Get the block meta data of the Block
     pub fn get_meta_data(&self) -> MetaData {
         self.meta_data.clone()
+    }
+
+    /// new from local mr
+    pub fn new_with_local_mr(meta_data: MetaData, local_mr: async_rdma::LocalMr) -> Self {
+        Block {
+            meta_data,
+            data: bytes::Bytes::new(),
+            local_mr: Some(Arc::new(local_mr)),
+        }
+    }
+
+    /// Get the local mr
+    pub fn get_local_mr(&self) -> Arc<async_rdma::LocalMr> {
+        self.local_mr.as_ref().unwrap().clone()
     }
 }
 

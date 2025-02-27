@@ -1,7 +1,6 @@
-use std::alloc::Layout;
 use std::sync::Arc;
 
-use async_rdma::{LocalMrReadAccess, LocalMrWriteAccess, Rdma, RemoteMr};
+use async_rdma::{LocalMrReadAccess, Rdma, RemoteMr};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use tokio::sync::mpsc;
@@ -101,24 +100,7 @@ impl Job for KVBlockRdmaHandler {
                 // Get the block by id
                 let metadata = MetaData::new(kv_cache_id, 0, 0, 0);
                 if let Ok(Some(block)) = self.cache_manager.read(metadata).await {
-                    let data = block.read().unwrap().get_data();
-
-                    // Put block data to remote mr
-                    let layout = Layout::from_size_align(u64_to_usize(block_size), 4096).unwrap();
-                    // Safety: immediate initialize
-                    let mut local_mr = match unsafe { self.rdma.alloc_local_mr_uninit(layout) } {
-                        Ok(local_mr) => local_mr,
-                        Err(err) => {
-                            error!("Failed to allocate local mr: {err:?}");
-                            // TODO(fh): decision on how to handle this error? immediately return or response with failed message?
-                            return;
-                        }
-                    };
-                    println!("RDMA alloc local_mr success");
-
-                    debug_assert_eq!(data.len(), u64_to_usize(block_size));
-
-                    local_mr.as_mut_slice().copy_from_slice(&data);
+                    let local_mr = block.read().unwrap().get_local_mr();
                     println!(
                         "FH: get block data: {data:?}",
                         data = &local_mr.as_slice()[..30]
@@ -126,7 +108,7 @@ impl Job for KVBlockRdmaHandler {
 
                     let mut remote_mr = RemoteMr::new(mr_token);
 
-                    match self.rdma.write(&local_mr, &mut remote_mr).await {
+                    match self.rdma.write(&*local_mr, &mut remote_mr).await {
                         Ok(()) => {
                             response = KVBlockGetResponseWithRdma {
                                 kv_cache_id,
@@ -183,18 +165,17 @@ impl Job for KVBlockRdmaHandler {
 
                 let layout = std::alloc::Layout::from_size_align(block_size, 4096).unwrap();
 
-                // Safety: immediate initialize
-                let mut local_mr = match unsafe { self.rdma.alloc_local_mr_uninit(layout) } {
-                    Ok(local_mr) => local_mr,
-                    Err(err) => {
-                        error!("Failed to allocate local mr: {err:?}");
-                        // TODO(fh): decision on how to handle this error? immediately return or response with all failed ids?
-                        return;
-                    }
-                };
-                println!("RDMA alloc local_mr success");
-
                 for req in req.put_requests {
+                    // Safety: immediate initialize
+                    let mut local_mr = match unsafe { self.rdma.alloc_local_mr_uninit(layout) } {
+                        Ok(local_mr) => local_mr,
+                        Err(err) => {
+                            error!("Failed to allocate local mr: {err:?}");
+                            // TODO(fh): decision on how to handle this error? immediately return or response with all failed ids?
+                            return;
+                        }
+                    };
+                    println!("RDMA alloc local_mr success");
                     let mr_token = req.mr_token;
                     let cache_id = req.kv_cache_id;
 
@@ -206,12 +187,14 @@ impl Job for KVBlockRdmaHandler {
                         continue;
                     }
 
-                    let data = local_mr.as_slice();
-                    println!("FH: put block data: {data:?}", data = &data[..30]);
+                    println!(
+                        "FH: put block data: {data:?}",
+                        data = &local_mr.as_slice()[..30]
+                    );
 
                     let block_start = tokio::time::Instant::now();
                     let meta_data = MetaData::new(cache_id, 0, 0, 0);
-                    let kv_block = Block::new(meta_data, bytes::Bytes::from(data.to_vec()));
+                    let kv_block = Block::new_with_local_mr(meta_data, local_mr);
                     let block_start_0 = block_start.elapsed();
                     debug!(
                         "KVBlockBatchPutRequest new block: Time elapsed: {:?}",
